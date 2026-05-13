@@ -37,6 +37,7 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
+tests/
 htmlcov/
 .tox/
 .nox/
@@ -145,6 +146,9 @@ venv.bak/
 
 # mkdocs documentation
 /site
+
+# Local agent planning notes
+docs/superpowers/
 
 # mypy
 .mypy_cache/
