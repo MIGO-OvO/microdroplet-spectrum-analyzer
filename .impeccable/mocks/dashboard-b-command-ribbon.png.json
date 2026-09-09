@@ -1,0 +1,6 @@
+{
+  "name": "Command ribbon with full-width chart",
+  "prompt": "High-fidelity 16:10 desktop UI comp for 微液滴光谱分析仪 in the same modern scientific dashboard language. Structure: compact full-width app bar; two-row horizontal preprocessing and detection command ribbon spanning the viewport; full-width dominant signal chart at roughly 58% height; lower split with concise statistics ledger on the left and wide result table on the right. No side navigation, droplet sidebar or workflow rail. Use cool clean whites, graphite, restrained scientific blue/cyan, amber warnings and green success; practical Chinese system UI type, crisp one-pixel borders, precise spacing and publication-grade chart legibility. Show only real workflow labels and synthetic abstract signal data; do not invent claims. Avoid dark theme, gradients, glassmorphism, neon, excessive cards, decorative illustration and device framing.",
+  "approved": false,
+  "generatedBy": "built-in image_gen"
+}

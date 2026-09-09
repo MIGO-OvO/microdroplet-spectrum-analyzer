@@ -1,0 +1,6 @@
+{
+  "name": "Three-pane analysis studio",
+  "prompt": "High-fidelity 16:10 desktop UI comp for 微液滴光谱分析仪 in the same modern scientific dashboard language. Structure: compact full-width app bar; plain left parameter workspace at about 24% width for file, preprocessing, detection, refresh and suggestions; dominant central signal chart at about 56%; narrow right review column at about 20% for statistics, warnings and detected items; bottom tab strip and full-width results table. The left panel is functional controls, never a droplet illustration or workflow-navigation rail. Use cool clean whites, graphite, restrained scientific blue/cyan, amber warnings and green success; practical Chinese system UI type, crisp one-pixel borders, precise spacing and publication-grade chart legibility. Show only real workflow labels and synthetic abstract signal data; do not invent claims. Avoid dark theme, gradients, glassmorphism, neon, excessive cards, decorative illustration and device framing.",
+  "approved": true,
+  "generatedBy": "built-in image_gen"
+}

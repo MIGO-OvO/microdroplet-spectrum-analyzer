@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Microdroplet Spectrum Analyzer",
+  "version": "0.1.0",
+  "identifier": "com.microdroplet.spectrum-analyzer",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "微液滴光谱分析仪",
+        "width": 1600,
+        "height": 960,
+        "minWidth": 1080,
+        "minHeight": 700,
+        "center": true,
+        "resizable": true,
+        "decorations": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "windows": {
+      "webviewInstallMode": { "type": "skip" },
+      "nsis": { "languages": ["SimpChinese"], "displayLanguageSelector": false }
+    },
+    "category": "Utility",
+    "shortDescription": "Offline microdroplet spectrum analysis",
+    "longDescription": "Import, preprocess, detect, review, and export microdroplet spectrum measurements locally."
+  }
+}

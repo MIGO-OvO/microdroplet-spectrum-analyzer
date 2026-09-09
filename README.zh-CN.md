@@ -1,191 +1,102 @@
-# Microdroplet Spectrum Analyzer
+# 微液滴光谱分析仪
 
-<p align="center">
-  <img src="asset/LOGO.svg" alt="Microdroplet Spectrum Analyzer 项目 Logo" width="160">
-</p>
+[![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri)](https://v2.tauri.app/)
+[![MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-<p align="center">
-  面向液滴光谱和微流控光学信号数据的桌面分析工具。
-</p>
+[English](README.md) · [下载 v0.1.0](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.0)
 
-<p align="center">
-  <a href="README.md">English</a>
-</p>
+面向微液滴光学测量的本地 Windows 分析工作台：导入信号、调整平滑、检测平台、放大复核并导出结果。
+实验数据仅在本机处理，不上传云端。
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![PySide6](https://img.shields.io/badge/UI-PySide6-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
-[![NumPy](https://img.shields.io/badge/NumPy-013243?logo=numpy&logoColor=white)](https://numpy.org/)
-[![Pandas](https://img.shields.io/badge/Pandas-150458?logo=pandas&logoColor=white)](https://pandas.pydata.org/)
-[![SciPy](https://img.shields.io/badge/SciPy-8CAAE6?logo=scipy&logoColor=white)](https://scipy.org/)
-[![Matplotlib](https://img.shields.io/badge/Matplotlib-11557C)](https://matplotlib.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+## 安装
 
-## 项目简介
+从 Release 下载 Windows x64 的 `-setup.exe`，安装语言默认为简体中文。
+安装包**不包含、也不自动下载 WebView2 运行库**；电脑需要已安装 Microsoft Edge WebView2 Runtime。
+缺少时请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/)单独安装。
 
-Microdroplet Spectrum Analyzer 是一个轻量级 Python 桌面应用，用于导入、预处理、检测、复核和导出液滴光谱或信号测量数据。它适合需要快速检查微液滴光学信号、定位稳定平台区间、对比传统峰值特征，并导出可复查结果表格和图像的实验分析场景。
+运行安装版无需 Python、Node.js 或 Rust。发布目标为 Windows 10/11 x64；安装包未进行代码签名，
+可能受到单位安全策略限制。
 
-项目核心信号处理逻辑位于 `spectrum_signal_app/`。分析请求、参数和结果通过 dataclass 组织，界面层通过 PySide6 提供文件加载、参数控制、快速预览、后台分析和高质量图表导出。
+## 功能
 
-## 功能特性
+- 读取 CSV、XLS、XLSX；第一行为表头，Excel 使用第一个工作表。
+- 选择信号列和可选的数值时间列；无效行成对跳过，时间列须非递减。
+- 削峰／中值过滤、Savitzky–Golay 平滑及手动基线修正。
+- 按幅度和长度检测平台；已移除传统寻峰。
+- 自动区间根据稳健噪声估计及连续信号段内部幅度生成，上下限向外取整为 **2 位有效数字**。
+- 滚轮缩放、拖动平移；调整平滑参数或过滤方式保留缩放，换文件或主动重置恢复全图。
+- 放大局部时从 Rust 获取细节；全局预览保留原始及处理后信号的极值。
+- 后台分析，调参停止 350 ms 后自动更新，只保留最新待执行请求。
+- 结果表每页 100 项，Excel 导出始终包含全部检测结果；图表可导出 PNG/SVG。
+- 自定义标题栏，支持拖动、最小化、最大化／还原及关闭。
 
-- 导入 `.csv`、`.xlsx` 和 `.xls` 文件，并选择信号列和可选时间列。
-- 支持两种分析模式：基于阈值区间的平台检测，以及基于 `scipy.signal.find_peaks` 的传统寻峰。
-- 预处理流程支持分位数削峰、中值滤波、Savitzky-Golay 平滑和手动基线修正。
-- 可根据当前信号自动建议平台阈值和长度参数。
-- 使用 `pyqtgraph` 提供大数据量下的快速交互预览。
-- 使用 Matplotlib 生成适合导出的图表。
-- 支持导出分析结果到 Excel，导出图表到 PNG 或 SVG。
-- 通过防抖和后台线程保持界面响应。
-- 对超大数据集自动关闭实时刷新，降低界面卡顿风险。
-- 提供 Windows 无控制台启动脚本 `start.bat`。
+## 使用方法与边界
 
-## 项目状态
+1. 点击“加载数据”，选择信号列及可选时间列。
+2. 检查自动建议的幅度上下限，再按实验特征调整平滑和检测参数。
+3. 放大观察单独平台；参数更新后视图保持不变。关闭自动刷新时需点击“运行分析”。
+4. 待结果同步后导出 Excel 或图表。
 
-| 项目 | 当前状态 |
-| --- | --- |
-| 应用类型 | PySide6 桌面应用 |
-| 主程序包 | `spectrum_signal_app` |
-| 公开源码文件 | 10 个 Python 文件 |
-| 输入格式 | `.csv`, `.xlsx`, `.xls` |
-| 导出格式 | `.xlsx`, `.png`, `.svg` |
-| 开源协议 | MIT |
-| 仓库地址 | `https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer` |
+自动建议是启发式起点，不代表科学准确度验证。稀疏事件可能被默认 98% 削峰过滤掉，
+可提高到 100% 或改用中值过滤。基线不明显、占空比极高、基线漂移及非平顶信号建议手动复核。
+超过一百万有效点时，初次分析后默认关闭自动刷新。
 
-## 快速开始
+分析使用全分辨率数据；图表导出采用有界的全文件抽样，不导出当前缩放视图。
+Excel 导出的是检测结果而非原始信号。Excel 导入仍需在内存中解码工作簿。
 
-### 1. 克隆仓库
+## 性能验证
 
-```powershell
-git clone https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer.git
-cd microdroplet-spectrum-analyzer
-```
+2026-09-09 开发机 Release 构建，三列合成 CSV；非真实实验准确度测试，不包含界面和 IPC 开销。
 
-### 2. 创建并激活虚拟环境
+| 50 万点操作 | 改动前 | 改动后 |
+| --- | ---: | ---: |
+| CSV 结构读取 | 283 ms | 39 ms |
+| CSV 数据加载 | 398 ms | 60 ms |
+| 削峰、平滑与检测 | 13 ms | 9 ms |
+| 中值、平滑与检测 | 25 ms | 19 ms |
+| 自动建议（削峰路径） | 47 ms | 25 ms |
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-```
+基准覆盖 20 万和 50 万点。实际速度取决于硬件、数据格式和参数，以上数值不构成性能保证。
 
-如果 PowerShell 阻止激活脚本，可以在当前终端中执行：
+## 开发与打包
+
+需要 Node.js 22.12+（或受支持的更高版本）、npm、稳定版 Rust、带 C++ 桌面开发组件的
+Microsoft C++ Build Tools 及 WebView2。参阅 [Tauri 环境要求](https://v2.tauri.app/start/prerequisites/)。
 
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+npm ci
+npm run tauri dev
+npm test
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+cargo test --manifest-path src-tauri/Cargo.toml --release --all-targets
+cargo test --manifest-path src-tauri/Cargo.toml --release --lib -- --ignored --nocapture --test-threads=1
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+npm run tauri -- build --bundles nsis
 ```
 
-然后重新激活虚拟环境。
-
-### 3. 安装依赖
-
-```powershell
-pip install -r requirements.txt
-```
-
-### 4. 启动应用
-
-推荐使用包入口：
-
-```powershell
-python -m spectrum_signal_app
-```
-
-兼容启动方式：
-
-```powershell
-python main.py
-```
-
-Windows 无控制台启动：
-
-```powershell
-.\start.bat
-```
-
-## 基本使用流程
-
-1. 加载 CSV 或 Excel 数据文件。
-2. 选择信号列，并按需选择时间列。
-3. 选择平台检测或传统寻峰模式。
-4. 调整预处理和检测参数。
-5. 在平台检测模式下，可使用自动参数建议作为初始配置。
-6. 查看快速预览图、导出图、统计信息和结果表格。
-7. 将结果表格导出为 Excel，或将图表导出为 PNG/SVG。
-
-## 分析模型
-
-分析器使用几个小型 dataclass 来描述一次分析任务：
-
-| Dataclass | 作用 |
-| --- | --- |
-| `PreprocessParams` | 滤波模式、平滑窗口、削峰分位数和基线修正 |
-| `PlateauParams` | 阈值范围、平台最小/最大长度和边缘偏离限制 |
-| `PeakParams` | 峰高、峰间距和峰突出度参数 |
-| `AnalysisRequest` | 一次完整分析请求 |
-| `AnalysisResult` | 处理后信号、检测特征、统计结果、警告和缓存状态 |
+安装包输出在 `src-tauri/target/release/bundle/nsis/`。
+`npm run dev` 仅展示带明确标识的合成数据预览，桌面功能须运行 Tauri 应用。
 
 ## 项目结构
 
-```text
-microdroplet-spectrum-analyzer/
-|-- asset/
-|   `-- LOGO.svg                 # README 使用的项目 Logo
-|-- spectrum_signal_app/
-|   |-- __init__.py              # Matplotlib Qt 后端设置
-|   |-- __main__.py              # 支持 python -m spectrum_signal_app
-|   |-- app.py                   # QApplication 启动逻辑
-|   |-- analyzer.py              # 信号预处理和特征检测
-|   |-- canvas.py                # Matplotlib 画布封装
-|   |-- config.py                # 默认参数和绘图样式常量
-|   |-- dialogs.py               # 数据列和时间列选择对话框
-|   `-- main_window.py           # PySide6 主界面
-|-- config.py                    # 兼容旧导入路径的配置转发
-|-- main.py                      # 兼容启动入口
-|-- requirements.txt             # 运行依赖
-|-- start.bat                    # Windows 无控制台启动入口
-|-- start_hidden.vbs             # 使用 pythonw.exe 启动程序包
-|-- LICENSE                      # MIT 协议
-|-- README.md                    # 英文 README
-`-- README.zh-CN.md              # 简体中文 README
-```
+- `src/components/`：参数、Canvas 图表、标题栏、统计和分页结果表。
+- `src/lib/`：桌面桥接、格式化、视口辅助函数及前端测试。
+- `src-tauri/src/analyzer.rs`：预处理、平台检测、自动建议和绘图抽样。
+- `src-tauri/src/data.rs`：CSV 流式读取及 Excel 读取。
+- `src-tauri/src/commands.rs`：后台命令及分析版本管理。
+- `src-tauri/src/export.rs`：Excel、PNG、SVG 导出。
 
-## 质量检查
+## 反馈、贡献与许可证
 
-发布改动前可以先运行语法编译检查：
+请在 [GitHub Issues](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/issues)提供版本、
+系统、数据量、参数及复现步骤；请勿上传未经授权的实验数据。代码贡献应附带回归测试。
 
-```powershell
-python -m py_compile main.py config.py spectrum_signal_app\*.py
-```
+使用 [MIT 许可证](LICENSE)，维护者为 [MIGO-OvO](https://github.com/MIGO-OvO)。
+感谢 Tauri、React、Vite、Lucide、calamine、csv、rust_xlsxwriter 和 Plotters。
+原 Python 实现保存在 Git 历史中。
 
-## 依赖
+## v0.1.0 更新
 
-| 依赖 | 用途 |
-| --- | --- |
-| PySide6 | Qt 桌面界面 |
-| pyqtgraph | 快速交互式信号预览 |
-| Matplotlib | 高质量图表导出 |
-| NumPy | 数组和向量化数值计算 |
-| Pandas | CSV/Excel 读取和 Excel 导出 |
-| SciPy | 信号滤波和寻峰 |
-
-## 问题反馈
-
-如果发现 bug、界面行为不清晰，或某类分析结果不符合预期，请在这里提交 issue：
-
-[GitHub Issues](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/issues)
-
-反馈时建议包含输入文件格式、选择的数据列、分析模式、参数设置，以及能帮助说明问题的截图。
-
-## 开源协议
-
-本项目基于 [MIT License](LICENSE) 开源。
-
-## 致谢
-
-本项目使用了以下开源项目：
-
-- [Python](https://www.python.org/) 作为应用运行时。
-- [Qt for Python / PySide6](https://doc.qt.io/qtforpython-6/) 构建桌面界面。
-- [NumPy](https://numpy.org/)、[Pandas](https://pandas.pydata.org/) 和 [SciPy](https://scipy.org/) 处理数据和信号。
-- [pyqtgraph](https://www.pyqtgraph.org/) 提供大规模信号的快速预览。
-- [Matplotlib](https://matplotlib.org/) 生成适合发布和导出的图表。
+发布 Rust/Tauri Windows NSIS 安装版；优化区间识别、大文件交互和缩放保持，
+移除传统寻峰，加入自定义标题栏。

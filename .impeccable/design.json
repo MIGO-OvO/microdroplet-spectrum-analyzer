@@ -1,0 +1,263 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-04T16:51:30.6275523+08:00",
+  "title": "Design System: Microdroplet Spectrum Analyzer",
+  "extensions": {
+    "colorMeta": {
+      "surface-canvas": {
+        "role": "neutral",
+        "displayName": "冷白画布",
+        "canonical": "#eef2f4",
+        "tonalRamp": ["oklch(15% 0.005 228.8)", "oklch(26% 0.005 228.8)", "oklch(38% 0.005 228.8)", "oklch(50% 0.005 228.8)", "oklch(62% 0.005 228.8)", "oklch(74% 0.005 228.8)", "oklch(86% 0.005 228.8)", "oklch(95% 0.005 228.8)"]
+      },
+      "surface-panel": {
+        "role": "neutral",
+        "displayName": "仪器白面",
+        "canonical": "#ffffff",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(26% 0 0)", "oklch(38% 0 0)", "oklch(50% 0 0)", "oklch(62% 0 0)", "oklch(74% 0 0)", "oklch(86% 0 0)", "oklch(95% 0 0)"]
+      },
+      "surface-subtle": {
+        "role": "neutral",
+        "displayName": "轻冷白面",
+        "canonical": "#f6f8f9",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(26% 0 0)", "oklch(38% 0 0)", "oklch(50% 0 0)", "oklch(62% 0 0)", "oklch(74% 0 0)", "oklch(86% 0 0)", "oklch(95% 0 0)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "石墨正文",
+        "canonical": "#1e2a32",
+        "tonalRamp": ["oklch(15% 0.022 237.8)", "oklch(26% 0.022 237.8)", "oklch(38% 0.022 237.8)", "oklch(50% 0.022 237.8)", "oklch(62% 0.022 237.8)", "oklch(74% 0.022 237.8)", "oklch(86% 0.022 237.8)", "oklch(95% 0.022 237.8)"]
+      },
+      "ink-secondary": {
+        "role": "neutral",
+        "displayName": "次级石墨",
+        "canonical": "#53646f",
+        "tonalRamp": ["oklch(15% 0.027 236.5)", "oklch(26% 0.027 236.5)", "oklch(38% 0.027 236.5)", "oklch(50% 0.027 236.5)", "oklch(62% 0.027 236.5)", "oklch(74% 0.027 236.5)", "oklch(86% 0.027 236.5)", "oklch(95% 0.027 236.5)"]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "静音石墨",
+        "canonical": "#60717b",
+        "tonalRamp": ["oklch(15% 0.026 233.8)", "oklch(26% 0.026 233.8)", "oklch(38% 0.026 233.8)", "oklch(50% 0.026 233.8)", "oklch(62% 0.026 233.8)", "oklch(74% 0.026 233.8)", "oklch(86% 0.026 233.8)", "oklch(95% 0.026 233.8)"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "细分隔线",
+        "canonical": "#d6dee3",
+        "tonalRamp": ["oklch(15% 0.011 234.8)", "oklch(26% 0.011 234.8)", "oklch(38% 0.011 234.8)", "oklch(50% 0.011 234.8)", "oklch(62% 0.011 234.8)", "oklch(74% 0.011 234.8)", "oklch(86% 0.011 234.8)", "oklch(95% 0.011 234.8)"]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "结构边框",
+        "canonical": "#b9c5cc",
+        "tonalRamp": ["oklch(15% 0.016 233.1)", "oklch(26% 0.016 233.1)", "oklch(38% 0.016 233.1)", "oklch(50% 0.016 233.1)", "oklch(62% 0.016 233.1)", "oklch(74% 0.016 233.1)", "oklch(86% 0.016 233.1)", "oklch(95% 0.016 233.1)"]
+      },
+      "blue": {
+        "role": "primary",
+        "displayName": "科学蓝",
+        "canonical": "#147d9a",
+        "tonalRamp": ["oklch(15% 0.097 222.7)", "oklch(26% 0.097 222.7)", "oklch(38% 0.097 222.7)", "oklch(50% 0.097 222.7)", "oklch(62% 0.097 222.7)", "oklch(74% 0.097 222.7)", "oklch(86% 0.097 222.7)", "oklch(95% 0.097 222.7)"]
+      },
+      "blue-strong": {
+        "role": "primary",
+        "displayName": "深科学蓝",
+        "canonical": "#0e6983",
+        "tonalRamp": ["oklch(15% 0.087 223.7)", "oklch(26% 0.087 223.7)", "oklch(38% 0.087 223.7)", "oklch(50% 0.087 223.7)", "oklch(62% 0.087 223.7)", "oklch(74% 0.087 223.7)", "oklch(86% 0.087 223.7)", "oklch(95% 0.087 223.7)"]
+      },
+      "cyan": {
+        "role": "secondary",
+        "displayName": "液滴青",
+        "canonical": "#2bc4f7",
+        "tonalRamp": ["oklch(15% 0.139 226.7)", "oklch(26% 0.139 226.7)", "oklch(38% 0.139 226.7)", "oklch(50% 0.139 226.7)", "oklch(62% 0.139 226.7)", "oklch(74% 0.139 226.7)", "oklch(86% 0.139 226.7)", "oklch(95% 0.139 226.7)"]
+      },
+      "green": {
+        "role": "secondary",
+        "displayName": "结果绿",
+        "canonical": "#24866a",
+        "tonalRamp": ["oklch(15% 0.099 169.4)", "oklch(26% 0.099 169.4)", "oklch(38% 0.099 169.4)", "oklch(50% 0.099 169.4)", "oklch(62% 0.099 169.4)", "oklch(74% 0.099 169.4)", "oklch(86% 0.099 169.4)", "oklch(95% 0.099 169.4)"]
+      },
+      "amber": {
+        "role": "tertiary",
+        "displayName": "状态琥珀",
+        "canonical": "#b67216",
+        "tonalRamp": ["oklch(15% 0.128 67)", "oklch(26% 0.128 67)", "oklch(38% 0.128 67)", "oklch(50% 0.128 67)", "oklch(62% 0.128 67)", "oklch(74% 0.128 67)", "oklch(86% 0.128 67)", "oklch(95% 0.128 67)"]
+      },
+      "amber-surface": {
+        "role": "tertiary",
+        "displayName": "浅琥珀面",
+        "canonical": "#fff4df",
+        "tonalRamp": ["oklch(15% 0.03 83.6)", "oklch(26% 0.03 83.6)", "oklch(38% 0.03 83.6)", "oklch(50% 0.03 83.6)", "oklch(62% 0.03 83.6)", "oklch(74% 0.03 83.6)", "oklch(86% 0.03 83.6)", "oklch(95% 0.03 83.6)"]
+      },
+      "chart-amber": {
+        "role": "tertiary",
+        "displayName": "图表琥珀",
+        "canonical": "#d69027",
+        "tonalRamp": ["oklch(15% 0.14 71.5)", "oklch(26% 0.14 71.5)", "oklch(38% 0.14 71.5)", "oklch(50% 0.14 71.5)", "oklch(62% 0.14 71.5)", "oklch(74% 0.14 71.5)", "oklch(86% 0.14 71.5)", "oklch(95% 0.14 71.5)"]
+      },
+      "red": {
+        "role": "tertiary",
+        "displayName": "故障红",
+        "canonical": "#bd4747",
+        "tonalRamp": ["oklch(15% 0.153 23.4)", "oklch(26% 0.153 23.4)", "oklch(38% 0.153 23.4)", "oklch(50% 0.153 23.4)", "oklch(62% 0.153 23.4)", "oklch(74% 0.153 23.4)", "oklch(86% 0.153 23.4)", "oklch(95% 0.153 23.4)"]
+      },
+      "red-surface": {
+        "role": "tertiary",
+        "displayName": "浅故障面",
+        "canonical": "#fff0f0",
+        "tonalRamp": ["oklch(15% 0.016 17.4)", "oklch(26% 0.016 17.4)", "oklch(38% 0.016 17.4)", "oklch(50% 0.016 17.4)", "oklch(62% 0.016 17.4)", "oklch(74% 0.016 17.4)", "oklch(86% 0.016 17.4)", "oklch(95% 0.016 17.4)"]
+      },
+      "signal-original": {
+        "role": "neutral",
+        "displayName": "原始信号灰蓝",
+        "canonical": "#71848f",
+        "tonalRamp": ["oklch(15% 0.028 233.3)", "oklch(26% 0.028 233.3)", "oklch(38% 0.028 233.3)", "oklch(50% 0.028 233.3)", "oklch(62% 0.028 233.3)", "oklch(74% 0.028 233.3)", "oklch(86% 0.028 233.3)", "oklch(95% 0.028 233.3)"]
+      },
+      "chart-grid": {
+        "role": "neutral",
+        "displayName": "图表网格冷灰",
+        "canonical": "#e4eaee",
+        "tonalRamp": ["oklch(15% 0.008 236.6)", "oklch(26% 0.008 236.6)", "oklch(38% 0.008 236.6)", "oklch(50% 0.008 236.6)", "oklch(62% 0.008 236.6)", "oklch(74% 0.008 236.6)", "oklch(86% 0.008 236.6)", "oklch(95% 0.008 236.6)"]
+      }
+    },
+    "typographyMeta": {
+      "brand": { "displayName": "品牌名", "purpose": "顶部中文产品名，保持紧凑而不形成展示型标题。" },
+      "metric": { "displayName": "主要读数", "purpose": "统计概览中的首要数值。" },
+      "section-title": { "displayName": "区块标题", "purpose": "参数、图表、统计和结果区域的结构标题。" },
+      "body": { "displayName": "正文", "purpose": "参数标签、说明与状态正文。" },
+      "control": { "displayName": "控件文字", "purpose": "按钮和紧凑交互标签。" },
+      "caption": { "displayName": "辅助说明", "purpose": "图例、元数据、提示和次级台账信息。" },
+      "axis": { "displayName": "坐标刻度", "purpose": "Canvas 坐标轴的稳定等宽数字。" }
+    },
+    "shadows": [
+      { "name": "selected-segment", "value": "0 1px 3px rgba(24, 44, 56, 0.14)", "purpose": "当前模式选项的轻微抬升。" },
+      { "name": "primary-action", "value": "0 2px 5px rgba(20, 89, 109, 0.22)", "purpose": "科学蓝主按钮静止态。" },
+      { "name": "primary-action-hover", "value": "0 3px 8px rgba(20, 89, 109, 0.26)", "purpose": "科学蓝主按钮悬停反馈。" },
+      { "name": "toggle-thumb", "value": "0 1px 3px rgba(30, 48, 59, 0.28)", "purpose": "白色开关滑块与轨道分离。" },
+      { "name": "data-tooltip", "value": "0 5px 14px rgba(35, 53, 64, 0.17)", "purpose": "Canvas 悬浮读数与信号线分离。" },
+      { "name": "modal", "value": "0 16px 44px rgba(17, 32, 42, 0.28)", "purpose": "受保护的列选择弹窗。" }
+    ],
+    "motion": [
+      { "name": "control-state", "value": "150ms ease-out", "purpose": "按钮、字段和开关状态变化。" },
+      { "name": "disclosure", "value": "160ms ease-out", "purpose": "参数分组展开箭头旋转。" },
+      { "name": "backdrop-enter", "value": "140ms ease-out", "purpose": "模态遮罩淡入。" },
+      { "name": "dialog-enter", "value": "180ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "列选择弹窗进入。" },
+      { "name": "spinner", "value": "700ms linear infinite", "purpose": "运行中按钮指示器。" },
+      { "name": "reduced-motion", "value": "0.01ms", "purpose": "系统请求减少动态效果时压缩所有动画与过渡。" }
+    ],
+    "breakpoints": [
+      { "name": "compact-workspace", "value": "1050px" },
+      { "name": "stacked-workspace", "value": "880px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "推进分析或确认载入的唯一主操作。",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">运行分析</button>",
+      "css": ".ds-btn-primary { min-height: 36px; padding: 0 13px; border: 1px solid var(--blue-strong, #0e6983); border-radius: 5px; background: var(--blue, #147d9a); color: #fff; font: 620 12px/1 'Segoe UI Variable Text', 'Segoe UI', sans-serif; box-shadow: 0 2px 5px rgba(20, 89, 109, 0.22); cursor: pointer; transition: background-color 150ms ease-out, box-shadow 150ms ease-out; } .ds-btn-primary:hover { background: var(--blue-strong, #0e6983); box-shadow: 0 3px 8px rgba(20, 89, 109, 0.26); } .ds-btn-primary:focus-visible { outline: 2px solid #1687a6; outline-offset: 2px; } .ds-btn-primary:active { box-shadow: 0 1px 3px rgba(20, 89, 109, 0.22); } .ds-btn-primary:disabled { cursor: not-allowed; opacity: 0.62; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "加载、导出和取消等不与主操作竞争的动作。",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">加载数据</button>",
+      "css": ".ds-btn-secondary { min-height: 36px; padding: 0 13px; border: 1px solid var(--line-strong, #b9c5cc); border-radius: 5px; background: var(--surface-panel, #fff); color: #33434d; font: 620 12px/1 'Segoe UI Variable Text', 'Segoe UI', sans-serif; cursor: pointer; transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out; } .ds-btn-secondary:hover { border-color: #8ba3b0; background: #f3f7f8; color: var(--blue-strong, #0e6983); } .ds-btn-secondary:focus-visible { outline: 2px solid #1687a6; outline-offset: 2px; } .ds-btn-secondary:active { background: var(--surface-subtle, #f6f8f9); } .ds-btn-secondary:disabled { cursor: not-allowed; opacity: 0.62; }"
+    },
+    {
+      "name": "Mode Switch",
+      "kind": "nav",
+      "refersTo": "mode-switch",
+      "description": "在平台检测与传统寻峰之间切换的紧凑分段控制。",
+      "html": "<div class=\"ds-mode-switch\" aria-label=\"分析模式\"><button class=\"ds-mode-option is-active\" type=\"button\" aria-pressed=\"true\">平台检测</button><button class=\"ds-mode-option\" type=\"button\" aria-pressed=\"false\">传统寻峰</button></div>",
+      "css": ".ds-mode-switch { display: inline-flex; padding: 3px; border: 1px solid var(--line, #d6dee3); border-radius: 6px; background: var(--surface-subtle, #f6f8f9); } .ds-mode-option { min-height: 31px; padding: 0 12px; border: 0; border-radius: 4px; background: transparent; color: var(--ink-secondary, #53646f); font: 400 12px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; cursor: pointer; } .ds-mode-option:hover { color: var(--blue-strong, #0e6983); } .ds-mode-option.is-active { background: var(--surface-panel, #fff); color: var(--blue-strong, #0e6983); box-shadow: 0 1px 3px rgba(24, 44, 56, 0.14); font-weight: 650; } .ds-mode-option:focus-visible { outline: 2px solid #1687a6; outline-offset: 2px; }"
+    },
+    {
+      "name": "Number Input",
+      "kind": "input",
+      "refersTo": "number-input",
+      "description": "参数面板中右对齐、使用等宽数字的紧凑数值字段。",
+      "html": "<label class=\"ds-number-field\"><span>平滑窗口</span><input type=\"number\" value=\"11\" /></label>",
+      "css": ".ds-number-field { display: grid; grid-template-columns: minmax(0, 1fr) 102px; gap: 10px; align-items: center; color: #465761; font: 400 12px/1.3 'Segoe UI Variable Text', 'Segoe UI', sans-serif; } .ds-number-field input { width: 100%; min-height: 31px; padding: 4px 7px; border: 1px solid #c7d1d7; border-radius: 4px; background: var(--surface-panel, #fff); color: #20303a; font: inherit; font-variant-numeric: tabular-nums; text-align: right; } .ds-number-field input:hover { border-color: #91a6b2; } .ds-number-field input:focus { border-color: var(--blue, #147d9a); } .ds-number-field input:focus-visible { outline: 2px solid #1687a6; outline-offset: 2px; } .ds-number-field input:disabled { cursor: not-allowed; background: #f1f3f4; opacity: 0.62; }"
+    },
+    {
+      "name": "Toggle Switch",
+      "kind": "input",
+      "refersTo": "toggle-switch",
+      "description": "自动刷新与标签显示设置使用的二态开关。",
+      "html": "<label class=\"ds-switch-row\"><span>自动刷新</span><input type=\"checkbox\" checked /></label>",
+      "css": ".ds-switch-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; color: #34454f; font: 620 12px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; cursor: pointer; } .ds-switch-row input { position: relative; width: 32px; height: 18px; margin: 0; appearance: none; border: 1px solid #aebcc5; border-radius: 999px; background: #cbd4d9; cursor: pointer; transition: background-color 150ms ease-out; } .ds-switch-row input::after { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(30, 48, 59, 0.28); content: ''; transition: transform 150ms ease-out; } .ds-switch-row input:checked { border-color: var(--blue, #147d9a); background: var(--blue, #147d9a); } .ds-switch-row input:checked::after { transform: translateX(14px); } .ds-switch-row input:focus-visible { outline: 2px solid #1687a6; outline-offset: 2px; } .ds-switch-row input:disabled { cursor: not-allowed; opacity: 0.62; }"
+    },
+    {
+      "name": "Cache Badge",
+      "kind": "chip",
+      "refersTo": "cache-badge",
+      "description": "以低噪声方式标记预处理缓存等辅助状态。",
+      "html": "<span class=\"ds-cache-badge\">复用预处理</span>",
+      "css": ".ds-cache-badge { display: inline-flex; align-items: center; padding: 3px 6px; border-radius: 999px; background: #eaf3f5; color: var(--blue-strong, #0e6983); font: 650 9px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; } .ds-cache-badge:focus-visible { outline: 2px solid #1687a6; outline-offset: 2px; }"
+    },
+    {
+      "name": "Instrument Panel",
+      "kind": "card",
+      "refersTo": "container-panel",
+      "description": "参数、图表、统计与结果区域共用的扁平工作面。",
+      "html": "<section class=\"ds-panel\"><h2>统计概览</h2><p>将真实分析信息置于连续白色工作面中。</p></section>",
+      "css": ".ds-panel { min-width: 0; padding: 13px 14px; border: 1px solid var(--line-strong, #b9c5cc); border-radius: 7px; background: var(--surface-panel, #fff); color: var(--ink, #1e2a32); font: 400 12px/1.5 'Segoe UI Variable Text', 'Segoe UI', sans-serif; } .ds-panel h2 { margin: 0 0 8px; font-size: 13px; font-weight: 680; letter-spacing: -0.01em; } .ds-panel p { margin: 0; color: var(--ink-secondary, #53646f); } .ds-panel:focus-within { border-color: #91a6b2; }"
+    },
+    {
+      "name": "Metric Ledger",
+      "kind": "custom",
+      "refersTo": "metric-ledger",
+      "description": "用细线网格呈现统计标签与主要读数。",
+      "html": "<dl class=\"ds-metric-ledger\"><div><dt>平台数量</dt><dd>5</dd></div><div><dt>平均高度</dt><dd>0.386</dd></div></dl>",
+      "css": ".ds-metric-ledger { display: grid; grid-template-columns: 1fr 1fr; margin: 0; border-top: 1px solid var(--line, #d6dee3); border-left: 1px solid var(--line, #d6dee3); background: var(--surface-panel, #fff); } .ds-metric-ledger div { min-width: 0; padding: 9px; border-right: 1px solid var(--line, #d6dee3); border-bottom: 1px solid var(--line, #d6dee3); } .ds-metric-ledger dt { color: var(--ink-secondary, #53646f); font: 400 10px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; } .ds-metric-ledger dd { margin: 5px 0 0; color: var(--ink, #1e2a32); font: 650 17px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-variant-numeric: tabular-nums; } .ds-metric-ledger:focus-visible { outline: 2px solid #1687a6; outline-offset: 2px; }"
+    },
+    {
+      "name": "Signal Legend",
+      "kind": "custom",
+      "refersTo": "signal-chart",
+      "description": "区分原始、处理、检测结果与平台阈值范围的图表语义。",
+      "html": "<div class=\"ds-signal-legend\"><span><i class=\"ds-raw\"></i>原始信号</span><span><i class=\"ds-processed\"></i>处理后信号</span><span><i class=\"ds-result\"></i>检测结果</span><span><i class=\"ds-range\"></i>检测范围 0.1–0.5</span></div>",
+      "css": ".ds-signal-legend { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; color: var(--ink-secondary, #53646f); font: 400 11px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; } .ds-signal-legend span { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; } .ds-signal-legend i { display: inline-block; flex: none; width: 18px; height: 0; border-top: 2px solid; } .ds-signal-legend .ds-raw { border-color: #71848f; } .ds-signal-legend .ds-processed { border-color: var(--blue, #147d9a); } .ds-signal-legend .ds-result { width: 8px; height: 8px; border: 2px solid #fff; border-radius: 50%; background: var(--green, #24866a); box-shadow: 0 0 0 1px var(--green, #24866a); } .ds-signal-legend .ds-range { height: 7px; border-top: 1px dashed var(--amber, #b67216); background: var(--amber-surface, #fff4df); } .ds-signal-legend:focus-visible { outline: 2px solid #1687a6; outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "冷白信号工作台",
+    "overview": "“冷白信号工作台”把界面当作精密仪器的操作面，而不是品牌海报：冷白工作面、石墨文字、细线框和少量科学蓝共同建立克制、可信、可长时间工作的氛围。信息密度紧凑，但每个区域依靠边界、表头和数值层级保持可扫描。\n\n系统服务于同屏复核：左侧参数、中央主图、右侧统计与检测台账、底部结果表来自同一次分析。蓝色负责操作与处理后信号，青色只留在紧凑液滴标志中，琥珀标记阈值与待更新状态，绿色确认检测和同步；状态始终同时用文字或图标表达。\n\n系统明确拒绝装饰性的液滴或工序导航侧栏，也不把品牌图形扩展为背景纹样；液滴 Logo 仅作为顶部命令栏中的紧凑品牌标志。",
+    "keyCharacteristics": [
+      "冷白平面与石墨信息层级",
+      "科学蓝主操作、青色品牌点、琥珀阈值、绿色确认",
+      "细而清晰的边框与低半径几何",
+      "参数、主图、统计和结果表的紧凑同屏复核",
+      "状态不只依赖颜色，并尊重减少动态效果"
+    ],
+    "rules": [
+      { "name": "The One Operational Blue Rule", "body": "科学蓝是唯一的操作强调色；青色只属于紧凑 Logo，不能与主按钮竞争。", "section": "colors" },
+      { "name": "The Semantic Pairing Rule", "body": "绿色、琥珀和红色永远与文字、图标、线型或区域形状共同表达状态，不单独依赖色相。", "section": "colors" },
+      { "name": "The Compact Evidence Rule", "body": "持续界面层级保持在 10–17px；不引入展示级标题来挤压信号和结果空间。", "section": "typography" },
+      { "name": "The Tabular Evidence Rule", "body": "测量值、点数、统计量和表格单元格使用 `font-variant-numeric: tabular-nums`；Canvas 刻度使用 11px 等宽字体。", "section": "typography" },
+      { "name": "The Chart-Dominance Rule", "body": "任何响应式重排都先保留主图的检查空间，再移动统计栏或堆叠参数；不得用装饰区占用中央证据区。", "section": "layout" },
+      { "name": "The Eight-Pixel Frame Rule", "body": "面板之间和工作区外缘都使用 8px 节奏，使四个证据区域看起来属于同一台仪器。", "section": "layout" },
+      { "name": "The Flat-by-Default Rule", "body": "普通面板和表格不使用阴影；有明确层级、选择或悬停含义时才允许抬升。", "section": "elevation" },
+      { "name": "The Instrument Geometry Rule", "body": "低半径矩形承载操作和数据，圆形只承载点状状态或定位标记。", "section": "shapes" }
+    ],
+    "dos": [
+      "**Do** 保持参数、主图、统计台账和结果表来自同一次分析，并让主图占据最大连续区域。",
+      "**Do** 使用白色工作面、1px 细边框、7px 面板圆角和 8px 面板间隙维持仪器般的结构。",
+      "**Do** 将科学蓝用于主操作与处理后信号，将琥珀用于阈值/待更新，将绿色用于检测/同步确认。",
+      "**Do** 为所有状态颜色同时提供文字、图标、线型或区域形状，并保留清晰的 `:focus-visible` 轮廓。",
+      "**Do** 在表格、统计和字段中保持紧凑行高与等宽数字，并让长文件名截断而不挤压操作。",
+      "**Do** 尊重 `prefers-reduced-motion`，把所有动画和过渡压缩到近乎即时。"
+    ],
+    "donts": [
+      "**Don't** 添加装饰性的液滴或工序导航侧栏；参数面板始终是功能控制区，不是导航。",
+      "**Don't** 把 Logo 放大为背景、水印、插画或重复图案；它只作为顶部命令栏中的 38px 品牌标志。",
+      "**Don't** 用大面积青色、琥珀、绿色或红色装饰界面，也不要让状态只靠颜色传达。",
+      "**Don't** 用卡片瀑布、厚阴影或大圆角拆散连续的数据关系；普通面板保持扁平和细边框。",
+      "**Don't** 引入海报式大标题、营销文案或无数据依据的指标；Operate 界面优先真实参数、信号与结果。",
+      "**Don't** 在窄屏先压缩主图；应按 1050px 和 880px 的已实现断点移动统计栏并堆叠区域。"
+    ]
+  }
+}

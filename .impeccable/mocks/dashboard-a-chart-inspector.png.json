@@ -1,0 +1,6 @@
+{
+  "name": "Chart-first with right inspector",
+  "prompt": "High-fidelity 16:10 desktop UI comp for 微液滴光谱分析仪 in a modern scientific dashboard language. Structure: compact full-width app bar with small logo, data status, mode switch and one primary run action; dominant signal chart at about 72% width; restrained right parameter inspector at about 28%; thin statistics band under the chart; tabbed results drawer at the bottom. No left navigation, droplet sidebar or workflow rail. Use cool clean whites, graphite, restrained scientific blue/cyan, amber warnings and green success; practical Chinese system UI type, crisp one-pixel borders, precise spacing and publication-grade chart legibility. Show only real workflow labels and synthetic abstract signal data; do not invent claims. Avoid dark theme, gradients, glassmorphism, neon, excessive cards, decorative illustration and device framing.",
+  "approved": false,
+  "generatedBy": "built-in image_gen"
+}
