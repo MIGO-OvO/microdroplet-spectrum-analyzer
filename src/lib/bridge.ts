@@ -49,6 +49,22 @@ export function suggestParameters(
   });
 }
 
+/**
+ * Droplet parameter suggestion.
+ *
+ * A separate command on purpose: the plateau heuristic models a baseline plus an
+ * elevated plateau, which is a different problem from telling two *levels* apart.
+ * The backend answers `ok: false` when the two states cannot be separated instead
+ * of returning plausible-looking numbers.
+ */
+export function suggestDropletParameters(
+  preprocess: PreprocessParams,
+): Promise<ParameterSuggestion> {
+  return invoke<ParameterSuggestion>("suggest_droplet_parameters", {
+    request: { preprocess },
+  });
+}
+
 function safeStem(fileName: string) {
   return fileName.replace(/\.[^.]+$/, "").replace(/[\\/:*?"<>|]+/g, "_") || "analysis";
 }

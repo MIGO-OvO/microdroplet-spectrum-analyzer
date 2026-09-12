@@ -128,6 +128,32 @@ pub async fn suggest_plateau_parameters(
     .map_err(join_error)
 }
 
+/// Separate suggestion entry point: the droplet derivation is driven by the
+/// two-state separation and the stable-run lengths, so it cannot reuse the
+/// baseline + positive-platform heuristics of the plateau mode.
+#[tauri::command]
+pub async fn suggest_droplet_parameters(
+    state: State<'_, AppState>,
+    request: SuggestionRequest,
+) -> Result<ParameterSuggestion, String> {
+    let signal = {
+        let session = state
+            .session
+            .lock()
+            .map_err(|_| "数据会话已损坏，请重新启动应用。".to_owned())?;
+        session
+            .dataset
+            .as_ref()
+            .map(|dataset| dataset.signal.clone())
+            .ok_or_else(|| "请先加载数据文件。".to_owned())?
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        analyzer::suggest_droplet_parameters(&signal, &request.preprocess)
+    })
+    .await
+    .map_err(join_error)
+}
+
 #[tauri::command]
 pub async fn export_results(
     state: State<'_, AppState>,

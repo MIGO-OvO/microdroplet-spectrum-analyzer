@@ -5,10 +5,11 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Sparkles,
+  Waves,
 } from "lucide-react";
 
 import { formatPointCount } from "../lib/format";
-import type { AnalysisRequest, DatasetSummary } from "../types";
+import type { AnalysisMode, AnalysisRequest, DatasetSummary } from "../types";
 
 interface NumberFieldProps {
   label: string;
@@ -86,6 +87,10 @@ export function ParameterPanel({
     });
   const updatePlateau = (patch: Partial<AnalysisRequest["plateau"]>) =>
     onRequestChange({ ...request, plateau: { ...request.plateau, ...patch } });
+  const updateDroplet = (patch: Partial<AnalysisRequest["droplet"]>) =>
+    onRequestChange({ ...request, droplet: { ...request.droplet, ...patch } });
+  const setMode = (mode: AnalysisMode) => onRequestChange({ ...request, mode });
+  const droplet = request.mode === "droplet";
 
   return (
     <aside className="parameter-panel" aria-label="分析参数">
@@ -122,6 +127,37 @@ export function ParameterPanel({
           <FolderOpen size={17} aria-hidden="true" />
           {summary ? "更换数据文件" : "加载数据文件"}
         </button>
+      </div>
+
+      <div className="panel-section mode-section">
+        <div className="section-heading">
+          <Waves size={17} aria-hidden="true" />
+          <h2>分析模式</h2>
+        </div>
+        <div className="mode-picker" role="radiogroup" aria-label="分析模式">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!droplet}
+            className={droplet ? "mode-option" : "mode-option active"}
+            disabled={disabled}
+            onClick={() => setMode("plateau")}
+          >
+            <strong>平台检测</strong>
+            <small>幅度区间内的平台宽度与高度</small>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={droplet}
+            className={droplet ? "mode-option active" : "mode-option"}
+            disabled={disabled}
+            onClick={() => setMode("droplet")}
+          >
+            <strong>液滴双电平分析</strong>
+            <small>Bottom / Platform 自动分类与校正信号 Δ</small>
+          </button>
+        </div>
       </div>
 
       <details className="parameter-group" open>
@@ -175,7 +211,11 @@ export function ParameterPanel({
             max={51}
             step={2}
             disabled={disabled}
-            title="Savitzky–Golay 平滑窗口，分析时会归一化为奇数。"
+            title={
+              droplet
+                ? "Savitzky–Golay 平滑窗口，只作用于检测信号；测量值始终取自原始信号。"
+                : "Savitzky–Golay 平滑窗口，分析时会归一化为奇数。"
+            }
             onChange={(smoothWindow) => updatePreprocess({ smoothWindow })}
           />
           <NumberField
@@ -185,21 +225,179 @@ export function ParameterPanel({
             max={1000}
             step={0.001}
             disabled={disabled}
-            title="从整条处理后信号中减去该数值。"
+            title={
+              droplet
+                ? "只平移检测信号，用于稳定区段判定；校正信号 Δ 与基线无关。"
+                : "从整条处理后信号中减去该数值。"
+            }
             onChange={(manualBaseline) => updatePreprocess({ manualBaseline })}
           />
         </div>
       </details>
 
-      <details className="parameter-group" open>
-        <summary>
-          <span>
-            <RefreshCw size={17} aria-hidden="true" />
-            平台检测参数
-          </span>
-          <ChevronDown size={16} aria-hidden="true" />
-        </summary>
-        <div className="parameter-fields">
+      {droplet ? (
+        <details className="parameter-group" open>
+          <summary>
+            <span>
+              <Waves size={17} aria-hidden="true" />
+              液滴双电平参数
+            </span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </summary>
+          <div className="parameter-fields">
+            <NumberField
+              label="最小稳定长度"
+              value={request.droplet.minSegmentLength}
+              min={3}
+              max={100000}
+              step={1}
+              disabled={disabled}
+              title="一个稳定区段至少包含的数据点数；过短的平台或多液滴会被忽略。"
+              onChange={(minSegmentLength) => updateDroplet({ minSegmentLength })}
+            />
+            <NumberField
+              label="稳定性窗口"
+              value={request.droplet.stabilityWindow}
+              min={3}
+              max={501}
+              step={2}
+              disabled={disabled}
+              title="局部稳定性判定的窗口宽度，分析时会归一化为奇数。窗口越大，判定越严格。"
+              onChange={(stabilityWindow) => updateDroplet({ stabilityWindow })}
+            />
+            <NumberField
+              label="边缘裁剪比例"
+              value={request.droplet.edgeTrimFraction}
+              min={0}
+              max={0.45}
+              step={0.01}
+              disabled={disabled}
+              title="每个稳定区段两端额外裁掉的比例，用于排除过渡点对电平的影响。"
+              onChange={(edgeTrimFraction) => updateDroplet({ edgeTrimFraction })}
+            />
+            <label className="switch-row compact-switch">
+              <span>
+                <strong>允许单侧参考</strong>
+                <small>首尾液滴只有一侧 Platform 时仍输出结果</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={request.droplet.allowSingleSidedReference}
+                disabled={disabled}
+                onChange={(event) =>
+                  updateDroplet({ allowSingleSidedReference: event.target.checked })
+                }
+              />
+            </label>
+            <details className="parameter-subgroup">
+              <summary>
+                高级判定容差
+                <ChevronDown size={14} aria-hidden="true" />
+              </summary>
+              <div className="parameter-fields">
+                <NumberField
+                  label="最长稳定长度"
+                  value={request.droplet.maxSegmentLength}
+                  min={0}
+                  max={1000000}
+                  step={1}
+                  disabled={disabled}
+                  title="0 表示不限制；用于排除异常长的稳定段。"
+                  onChange={(maxSegmentLength) => updateDroplet({ maxSegmentLength })}
+                />
+                <NumberField
+                  label="去尖峰窗口"
+                  value={request.droplet.despikeWindow}
+                  min={3}
+                  max={99}
+                  step={2}
+                  disabled={disabled}
+                  title="对称中值去尖峰窗口，分析时会归一化为奇数，并受最小稳定长度限制。"
+                  onChange={(despikeWindow) => updateDroplet({ despikeWindow })}
+                />
+                <NumberField
+                  label="去尖峰阈值"
+                  value={request.droplet.despikeSigma}
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  disabled={disabled}
+                  title="局部稳健 MAD 的倍数，超过即视为尖峰并替换为中值。"
+                  onChange={(despikeSigma) => updateDroplet({ despikeSigma })}
+                />
+                <NumberField
+                  label="离群剔除倍数"
+                  value={request.droplet.outlierSigma}
+                  min={1}
+                  max={10}
+                  step={0.5}
+                  disabled={disabled}
+                  title="测量电平时用于剔除区段内离群点的 MAD 倍数。"
+                  onChange={(outlierSigma) => updateDroplet({ outlierSigma })}
+                />
+                <NumberField
+                  label="噪声容差倍数"
+                  value={request.droplet.noiseFactor}
+                  min={2}
+                  max={50}
+                  step={0.5}
+                  disabled={disabled}
+                  title="局部离散度上限相对检测噪声的倍数。"
+                  onChange={(noiseFactor) => updateDroplet({ noiseFactor })}
+                />
+                <NumberField
+                  label="趋势容差倍数"
+                  value={request.droplet.slopeFactor}
+                  min={1}
+                  max={50}
+                  step={0.5}
+                  disabled={disabled}
+                  title="局部半窗中值差上限相对检测噪声的倍数。"
+                  onChange={(slopeFactor) => updateDroplet({ slopeFactor })}
+                />
+                <NumberField
+                  label="两态分离倍数"
+                  value={request.droplet.clusterSeparationFactor}
+                  min={0.5}
+                  max={20}
+                  step={0.5}
+                  disabled={disabled}
+                  title="高低两态间距必须超过噪声与簇内离散度的该倍数，否则不判定为双电平。"
+                  onChange={(clusterSeparationFactor) => updateDroplet({ clusterSeparationFactor })}
+                />
+                <NumberField
+                  label="参考间隔倍数"
+                  value={request.droplet.referenceGapFactor}
+                  min={1}
+                  max={20}
+                  step={0.5}
+                  disabled={disabled}
+                  title="Platform 与 Bottom 间距超过典型间距的该倍数时，标记参考间隔过大并降低置信度。"
+                  onChange={(referenceGapFactor) => updateDroplet({ referenceGapFactor })}
+                />
+              </div>
+            </details>
+            <button
+              className="button quiet full-width"
+              type="button"
+              onClick={onSuggest}
+              disabled={disabled || !summary || suggesting}
+            >
+              <Sparkles size={16} aria-hidden="true" />
+              {suggesting ? "正在计算建议…" : "自动建议参数"}
+            </button>
+          </div>
+        </details>
+      ) : (
+        <details className="parameter-group" open>
+          <summary>
+            <span>
+              <RefreshCw size={17} aria-hidden="true" />
+              平台检测参数
+            </span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </summary>
+          <div className="parameter-fields">
             <>
               <NumberField
                 label="幅度下限"
@@ -263,8 +461,9 @@ export function ParameterPanel({
                 {suggesting ? "正在计算建议…" : "自动建议参数"}
               </button>
             </>
-        </div>
-      </details>
+          </div>
+        </details>
+      )}
 
       <div className="panel-section analysis-options">
         <label className="switch-row">

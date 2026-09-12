@@ -1,4 +1,10 @@
-import type { AnalysisResponse, DatasetSummary } from "../types";
+import type {
+  AnalysisResponse,
+  DatasetSummary,
+  DropletMeasurement,
+  DropletStatistics,
+  StableSegment,
+} from "../types";
 
 function seededNoise(index: number) {
   const value = Math.sin(index * 12.9898 + 78.233) * 43758.5453;
@@ -61,6 +67,171 @@ export const SAMPLE_RESULT: AnalysisResponse = {
     meanLength: 172.2,
     lengthStandardDeviation: 11.6,
   },
+  stableSegments: [],
+  dropletMeasurements: [],
+  dropletStatistics: {
+    dropletCount: 0,
+    meanCorrectedSignal: null,
+    minCorrectedSignal: null,
+    maxCorrectedSignal: null,
+    standardDeviation: null,
+    rsd: null,
+    meanBottom: null,
+    meanPlatformReference: null,
+    interpolatedCount: 0,
+    singleSidedCount: 0,
+    lowConfidenceCount: 0,
+    unknownSegmentCount: 0,
+  },
+  usedCachedPreprocess: false,
+  warnings: [],
+};
+
+// ------------------------------------------------------------- droplet demo
+//
+// A synthetic dual-state record for the browser preview: Platform and Bottom
+// alternate while the whole baseline drifts, so the corrected Δ can only be
+// recovered by a *local* reference. Every number below is derived from the same
+// interpolation rule the backend uses, so the preview shows the real shape of the
+// output rather than a decorative pastiche.
+
+const TRUE_DELTA = 0.0339;
+const dropletSections: Array<{ kind: "platform" | "bottom"; length: number }> = [];
+for (let cycle = 0; cycle < 7; cycle += 1) {
+  dropletSections.push({ kind: "platform", length: 150 });
+  dropletSections.push({ kind: "bottom", length: 80 });
+}
+dropletSections.push({ kind: "platform", length: 75 });
+
+const dropletPointCount = dropletSections.reduce((sum, section) => sum + section.length, 0);
+const dropletDrift = (index: number) => 0.0305 + 0.004 * (index / (dropletPointCount - 1)) + Math.sin(index / 260) * 0.0009;
+
+const dropletOriginal: number[] = [];
+for (const section of dropletSections) {
+  const sectionStart = dropletOriginal.length;
+  for (let offset = 0; offset < section.length; offset += 1) {
+    const index = sectionStart + offset;
+    const platform = dropletDrift(index);
+    const level = section.kind === "platform" ? platform : platform - TRUE_DELTA;
+    dropletOriginal.push(level + seededNoise(index + 900));
+  }
+}
+
+const dropletBounds: Array<{ kind: "platform" | "bottom"; start: number; end: number }> = [];
+{
+  let cursor = 0;
+  for (const section of dropletSections) {
+    // The detector loses a few samples at every boundary, so the reported ranges
+    // are slightly inside the drawn sections — exactly as in the Rust engine.
+    dropletBounds.push({
+      kind: section.kind,
+      start: cursor + 4,
+      end: cursor + section.length - 5,
+    });
+    cursor += section.length;
+  }
+}
+
+function sectionLevel(start: number, end: number) {
+  let total = 0;
+  for (let index = start; index <= end; index += 1) total += dropletOriginal[index];
+  return total / (end - start + 1);
+}
+
+const dropletStableSegments: StableSegment[] = dropletBounds.map((bounds, index) => ({
+  number: index + 1,
+  startIndex: bounds.start,
+  endIndex: bounds.end,
+  centerIndex: Math.floor((bounds.start + bounds.end) / 2),
+  start: bounds.start,
+  end: bounds.end,
+  center: Math.floor((bounds.start + bounds.end) / 2),
+  level: sectionLevel(bounds.start, bounds.end),
+  standardDeviation: 0.009 + index * 0.0001,
+  mad: 0.011,
+  slope: (index % 2 === 0 ? -1 : 1) * 2.2e-5,
+  length: bounds.end - bounds.start + 1,
+  effectiveLength: bounds.end - bounds.start - 7,
+  kind: bounds.kind,
+  confidence: 0.38,
+}));
+
+const dropletMeasurements: DropletMeasurement[] = [];
+for (let index = 1; index < dropletStableSegments.length; index += 1) {
+  const segment = dropletStableSegments[index];
+  if (segment.kind !== "bottom") continue;
+  const left = dropletStableSegments[index - 1];
+  const right = dropletStableSegments[index + 1] ?? null;
+  const reference = right
+    ? left.level + (right.level - left.level) * ((segment.center - left.center) / (right.center - left.center))
+    : left.level;
+  dropletMeasurements.push({
+    number: dropletMeasurements.length + 1,
+    bottomSegment: segment.number,
+    leftPlatformSegment: left.number,
+    rightPlatformSegment: right?.number ?? null,
+    centerIndex: segment.centerIndex,
+    center: segment.center,
+    bottomLevel: segment.level,
+    leftPlatformLevel: left.level,
+    rightPlatformLevel: right?.level ?? null,
+    platformReference: reference,
+    correctedSignal: reference - segment.level,
+    referenceMode: right ? "interpolated" : "leftOnly",
+    confidence: right ? 0.38 : 0.23,
+    qualityFlags: right
+      ? ["lowClassificationConfidence"]
+      : ["singleSidedReference", "lowClassificationConfidence"],
+  });
+}
+
+const correctedValues = dropletMeasurements.map((measurement) => measurement.correctedSignal);
+const meanCorrected = correctedValues.reduce((sum, value) => sum + value, 0) / correctedValues.length;
+const correctedDeviation = Math.sqrt(
+  correctedValues.reduce((sum, value) => sum + (value - meanCorrected) ** 2, 0) / correctedValues.length,
+);
+
+const dropletStatistics: DropletStatistics = {
+  dropletCount: dropletMeasurements.length,
+  meanCorrectedSignal: meanCorrected,
+  minCorrectedSignal: Math.min(...correctedValues),
+  maxCorrectedSignal: Math.max(...correctedValues),
+  standardDeviation: correctedDeviation,
+  rsd: (correctedDeviation / meanCorrected) * 100,
+  meanBottom:
+    dropletMeasurements.reduce((sum, measurement) => sum + measurement.bottomLevel, 0) /
+    dropletMeasurements.length,
+  meanPlatformReference:
+    dropletMeasurements.reduce((sum, measurement) => sum + measurement.platformReference, 0) /
+    dropletMeasurements.length,
+  interpolatedCount: dropletMeasurements.filter((measurement) => measurement.referenceMode === "interpolated").length,
+  singleSidedCount: dropletMeasurements.filter((measurement) => measurement.referenceMode !== "interpolated").length,
+  lowConfidenceCount: dropletMeasurements.filter((measurement) => measurement.confidence < 0.5).length,
+  unknownSegmentCount: 0,
+};
+
+export const SAMPLE_DROPLET_RESULT: AnalysisResponse = {
+  mode: "droplet",
+  resultId: 0,
+  plot: {
+    x: Array.from({ length: dropletPointCount }, (_, index) => index),
+    original: dropletOriginal,
+    processed: dropletOriginal,
+  },
+  plateauFeatures: [],
+  statistics: {
+    featureCount: 0,
+    meanHeight: null,
+    maxHeight: null,
+    minHeight: null,
+    standardDeviation: null,
+    rsd: null,
+    meanLength: null,
+    lengthStandardDeviation: null,
+  },
+  stableSegments: dropletStableSegments,
+  dropletMeasurements,
+  dropletStatistics,
   usedCachedPreprocess: false,
   warnings: [],
 };

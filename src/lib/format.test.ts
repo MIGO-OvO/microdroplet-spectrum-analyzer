@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_REQUEST } from "../types";
-import { SAMPLE_RESULT } from "./sample";
-import { buildAxisTicks, formatMeasurement } from "./format";
+import { DEFAULT_REQUEST, type QualityFlag, type ReferenceMode, type SegmentKind } from "../types";
+import { SAMPLE_DROPLET_RESULT, SAMPLE_RESULT } from "./sample";
+import {
+  buildAxisTicks,
+  formatMeasurement,
+  formatQualityFlag,
+  formatReferenceMode,
+  formatSegmentKind,
+} from "./format";
 
 describe("formatMeasurement", () => {
   it("uses a dash for absent values", () => {
@@ -30,6 +36,28 @@ describe("buildAxisTicks", () => {
   });
 });
 
+describe("droplet vocabulary labels", () => {
+  const kinds: SegmentKind[] = ["unknown", "platform", "bottom"];
+  const modes: ReferenceMode[] = ["interpolated", "leftOnly", "rightOnly", "none"];
+  const flags: QualityFlag[] = [
+    "lowClassificationConfidence",
+    "singleSidedReference",
+    "largeReferenceGap",
+    "noisyBottom",
+    "noisyPlatform",
+    "nearbyUnknownSegment",
+    "indexTimeFallback",
+  ];
+
+  it("translates every state, reference mode and quality flag", () => {
+    // The helpers fall back to the raw machine string, so an uncovered member
+    // would show up as an untranslated value here.
+    for (const kind of kinds) expect(formatSegmentKind(kind)).not.toBe(kind);
+    for (const mode of modes) expect(formatReferenceMode(mode)).not.toBe(mode);
+    for (const flag of flags) expect(formatQualityFlag(flag)).not.toBe(flag);
+  });
+});
+
 describe("analysis defaults", () => {
   it("retain the incumbent plateau and preprocessing defaults", () => {
     expect(DEFAULT_REQUEST.preprocess).toMatchObject({
@@ -49,9 +77,85 @@ describe("analysis defaults", () => {
     });
   });
 
+  it("default to plateau mode so existing behaviour is unchanged", () => {
+    expect(DEFAULT_REQUEST.mode).toBe("plateau");
+  });
+
+  it("expose the droplet defaults the backend normalises against", () => {
+    expect(DEFAULT_REQUEST.droplet).toMatchObject({
+      minSegmentLength: 8,
+      maxSegmentLength: 0,
+      stabilityWindow: 15,
+      edgeTrimFraction: 0.08,
+      outlierSigma: 3,
+      allowSingleSidedReference: true,
+      despikeWindow: 5,
+      despikeSigma: 3,
+      noiseFactor: 6,
+      slopeFactor: 3,
+      clusterSeparationFactor: 2.5,
+      referenceGapFactor: 3,
+    });
+  });
+
   it("keeps preview plot arrays aligned", () => {
     expect(SAMPLE_RESULT.plot.original).toHaveLength(SAMPLE_RESULT.plot.x.length);
     expect(SAMPLE_RESULT.plot.processed).toHaveLength(SAMPLE_RESULT.plot.x.length);
     expect(SAMPLE_RESULT.statistics.featureCount).toBe(SAMPLE_RESULT.plateauFeatures.length);
+  });
+});
+
+describe("droplet preview payload", () => {
+  const result = SAMPLE_DROPLET_RESULT;
+
+  it("stays in droplet mode and carries no plateau features", () => {
+    expect(result.mode).toBe("droplet");
+    expect(result.plateauFeatures).toHaveLength(0);
+    expect(result.statistics.featureCount).toBe(0);
+  });
+
+  it("keeps the corrected signal equal to reference minus bottom", () => {
+    expect(result.dropletMeasurements.length).toBeGreaterThan(0);
+    for (const measurement of result.dropletMeasurements) {
+      expect(measurement.correctedSignal).toBeCloseTo(
+        measurement.platformReference - measurement.bottomLevel,
+        12,
+      );
+    }
+  });
+
+  it("only claims interpolation when both neighbours exist", () => {
+    for (const measurement of result.dropletMeasurements) {
+      if (measurement.referenceMode === "interpolated") {
+        expect(measurement.leftPlatformSegment).not.toBeNull();
+        expect(measurement.rightPlatformSegment).not.toBeNull();
+        expect(measurement.qualityFlags).not.toContain("singleSidedReference");
+      } else {
+        expect(
+          measurement.leftPlatformSegment === null || measurement.rightPlatformSegment === null,
+        ).toBe(true);
+        expect(measurement.qualityFlags).toContain("singleSidedReference");
+      }
+    }
+  });
+
+  it("points every measurement at a real Bottom segment", () => {
+    const bottoms = new Set(
+      result.stableSegments
+        .filter((segment) => segment.kind === "bottom")
+        .map((segment) => segment.number),
+    );
+    for (const measurement of result.dropletMeasurements) {
+      expect(bottoms.has(measurement.bottomSegment)).toBe(true);
+    }
+    expect(result.dropletStatistics.dropletCount).toBe(result.dropletMeasurements.length);
+    expect(result.dropletStatistics.interpolatedCount).toBe(
+      result.dropletMeasurements.filter((m) => m.referenceMode === "interpolated").length,
+    );
+  });
+
+  it("keeps the preview plot aligned", () => {
+    expect(result.plot.original).toHaveLength(result.plot.x.length);
+    expect(result.plot.processed).toHaveLength(result.plot.x.length);
   });
 });

@@ -27,6 +27,8 @@ Windows 10/11 x64 is the release target. The installer is unsigned; organization
 - Select a signal column and optional nondecreasing numeric time column; invalid rows are skipped as aligned pairs.
 - Percentile clipping or median filtering, followed by Savitzky–Golay smoothing and manual baseline subtraction.
 - Plateau detection with amplitude, length, and refinement controls. Traditional peak finding has been removed.
+- **Dual-state droplet analysis** (液滴双电平分析): stable-region detection, automatic Platform/Bottom classification,
+  pairing of every Bottom with its neighbouring Platforms, local reference interpolation, and a corrected ΔSignal per droplet.
 - Automatic amplitude suggestions use robust noise estimates and interiors of sustained signal regions.
   Suggested amplitude bounds are rounded outward to **two significant digits**, not two decimal places.
 - Wheel/keyboard zoom and drag-to-pan. Adjusting preprocessing preserves both zoomed axes; a new file resets the view.
@@ -36,6 +38,46 @@ Windows 10/11 x64 is the release target. The installer is unsigned; organization
 - A paginated result table (100 rows/page); Excel export always includes all detected results.
 - PNG/SVG export of the complete analysis, independent of the interactive viewport.
 - Custom title bar with minimize, maximize/restore, drag, and close controls.
+
+## Analysis modes
+
+**平台检测 (Plateau detection)** keeps the original behaviour: regions whose amplitude lies inside an explicit
+`[thresholdLow, thresholdHigh]` window, refined by length and edge deviation. It is the right tool when the
+interesting quantity is the width or the height of an elevated plateau.
+
+**液滴双电平分析 (Dual-state droplet analysis)** models a rectangular two-level record instead. It never uses an
+absolute amplitude band. The pipeline is:
+
+```text
+raw signal ─┬─ symmetric despike (Hampel) → Savitzky–Golay → detection signal
+            │        └─ stable-region detection (local spread + local trend, relative to noise)
+            └─ raw interior → median/MAD → robust mean          (the physical level)
+
+  stable regions → automatic Platform/Bottom classification → sequence regularisation
+                 → Bottom ↔ neighbouring Platform pairing → local interpolation
+                 → corrected signal  ΔSignal = PlatformReference − BottomLevel
+```
+
+Key properties, all covered by Rust regression tests:
+
+- **Detection and measurement are decoupled.** Smoothing decides *where* a state is; every reported number
+  (`level`, `standardDeviation`, `mad`, `correctedSignal`) is measured on the **raw** signal, so smoothing can
+  never bias the result.
+- **The Platform reference is local, not global.** `PlatformReference` interpolates the two neighbouring
+  Platform levels at the Bottom's own x position, so LED, detector, temperature and baseline drift cancel to
+  first order. A global Platform mean is kept only as a control comparison in the tests.
+- **One-sided references are allowed but marked.** The first and last Bottom only have one neighbour; these
+  results are still produced (unless disabled) but carry `singleSidedReference` and score lower confidence.
+- **Unclassifiable data produces a warning, not droplets.** When the two levels cannot be separated, the run
+  reports `无法可靠分成高／低两个状态` and returns no measurements instead of forcing two clusters.
+- **Quality flags are machine-readable.** `DropletMeasurement.qualityFlags` is a list of enum values
+  (`lowClassificationConfidence`, `singleSidedReference`, `largeReferenceGap`, `noisyBottom`, `noisyPlatform`,
+  `nearbyUnknownSegment`, `indexTimeFallback`), shown in the table, the chart tooltip, and the Excel export.
+- The per-segment evidence (`stableSegments`: kind, level, length, MAD, slope, confidence) ships in the API and in
+  a second Excel worksheet so a reviewer can audit the classification instead of trusting it.
+
+Automatic droplet suggestions are a separate command from the plateau suggestion and refuse explicitly
+(`ok: false`) when the data does not show two separable levels.
 
 ## Usage and limitations
 
@@ -97,16 +139,21 @@ npm run tauri -- build --bundles nsis
 Installer output: `src-tauri/target/release/bundle/nsis/`.
 NSIS language and WebView2 exclusion are configured in `src-tauri/tauri.conf.json`.
 Tests cover numerical preprocessing fixtures, suggestions, cache reuse, local detail and spike preservation,
-CSV alignment, and Excel/PNG/SVG export.
+CSV alignment, and Excel/PNG/SVG export. The droplet engine additionally has regression tests for
+constant-offset invariance, linear-drift cancellation, positive/negative spikes, clean steps without overshoot,
+unbalanced segment widths, slow transitions, fragment merging, missing regions, one-sided boundaries, oversized
+reference gaps, flat/noise-only records, non-uniform time axes, tiny and negative levels, cache reuse, and the
+documented interpolation example.
 
 ## Repository structure
 
 - `src/components/`: parameters, chart, title bar, summary, and paginated result table.
 - `src/lib/`: Tauri bridge, formatting, viewport helpers, and frontend tests.
-- `src-tauri/src/analyzer.rs`: preprocessing, detection, suggestions, and plot sampling.
+- `src-tauri/src/analyzer/`: `mod.rs` (mode dispatch and cache), `preprocess.rs` (filters and Savitzky–Golay),
+  `robust.rs` (robust statistics), `plateau.rs` (legacy plateau mode), `droplet.rs` (dual-state engine).
 - `src-tauri/src/data.rs`: streaming CSV and Excel input.
 - `src-tauri/src/commands.rs`: background jobs and versioned analysis sessions.
-- `src-tauri/src/export.rs`: Excel and chart export.
+- `src-tauri/src/export.rs`: Excel and chart export, including the droplet worksheets.
 - `asset/`: existing application artwork.
 - `PRODUCT.md`, `DESIGN.md`: product and interface context.
 

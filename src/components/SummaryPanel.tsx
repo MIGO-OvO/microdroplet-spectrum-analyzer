@@ -6,9 +6,10 @@ import {
   Gauge,
   Ruler,
   Sigma,
+  Waves,
 } from "lucide-react";
 
-import { formatMeasurement } from "../lib/format";
+import { formatMeasurement, formatReferenceMode } from "../lib/format";
 import type { AnalysisResponse } from "../types";
 
 interface SummaryPanelProps {
@@ -18,38 +19,82 @@ interface SummaryPanelProps {
   status: string;
 }
 
-export function SummaryPanel({ result, busy, dirty, status }: SummaryPanelProps) {
-  const metrics = [
-    {
-      label: "平台数量",
-      value: result ? String(result.statistics.featureCount) : "—",
-      icon: Activity,
-    },
-    {
-      label: "平均高度",
-      value: formatMeasurement(result?.statistics.meanHeight ?? null, 6),
-      icon: Sigma,
-    },
-    {
-      label: "RSD",
-      value:
-        result?.statistics.rsd == null
-          ? "—"
-          : `${formatMeasurement(result.statistics.rsd, 2)}%`,
-      icon: Gauge,
-    },
-    {
-      label: result?.mode === "plateau" ? "平均长度" : "高度标准差",
-      value: formatMeasurement(
-        result?.mode === "plateau"
-          ? (result.statistics.meanLength ?? null)
-          : (result?.statistics.standardDeviation ?? null),
-        4,
-      ),
-      icon: Ruler,
-    },
+function DropletFacts({ result }: { result: AnalysisResponse }) {
+  const statistics = result.dropletStatistics;
+  const facts: Array<[string, string]> = [
+    ["平均 Bottom 电平", formatMeasurement(statistics.meanBottom, 6)],
+    ["平均 Platform Reference", formatMeasurement(statistics.meanPlatformReference, 6)],
+    [
+      "双侧插值 / 单侧参考",
+      `${statistics.interpolatedCount} / ${statistics.singleSidedCount}`,
+    ],
+    ["低置信度液滴", String(statistics.lowConfidenceCount)],
+    ["未分类稳定区段", String(statistics.unknownSegmentCount)],
   ];
-  const features = result?.plateauFeatures;
+  return (
+    <dl className="file-facts">
+      {facts.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+export function SummaryPanel({ result, busy, dirty, status }: SummaryPanelProps) {
+  const droplet = result?.mode === "droplet";
+  const statistics = result?.dropletStatistics;
+  const metrics = droplet
+    ? [
+        {
+          label: "液滴数量",
+          value: result ? String(statistics?.dropletCount ?? 0) : "—",
+          icon: Waves,
+        },
+        {
+          label: "平均校正信号 Δ",
+          value: formatMeasurement(statistics?.meanCorrectedSignal ?? null, 6),
+          icon: Sigma,
+        },
+        {
+          label: "RSD",
+          value:
+            statistics?.rsd == null ? "—" : `${formatMeasurement(statistics.rsd, 2)}%`,
+          icon: Gauge,
+        },
+        {
+          label: "校正信号标准差",
+          value: formatMeasurement(statistics?.standardDeviation ?? null, 6),
+          icon: Ruler,
+        },
+      ]
+    : [
+        {
+          label: "平台数量",
+          value: result ? String(result.statistics.featureCount) : "—",
+          icon: Activity,
+        },
+        {
+          label: "平均高度",
+          value: formatMeasurement(result?.statistics.meanHeight ?? null, 6),
+          icon: Sigma,
+        },
+        {
+          label: "RSD",
+          value:
+            result?.statistics.rsd == null
+              ? "—"
+              : `${formatMeasurement(result.statistics.rsd, 2)}%`,
+          icon: Gauge,
+        },
+        {
+          label: "平均长度",
+          value: formatMeasurement(result?.statistics.meanLength ?? null, 4),
+          icon: Ruler,
+        },
+      ];
 
   return (
     <aside className="summary-panel" aria-label="分析概览">
@@ -69,6 +114,11 @@ export function SummaryPanel({ result, busy, dirty, status }: SummaryPanelProps)
             </div>
           ))}
         </dl>
+        {droplet && result && (
+          <div className="droplet-facts">
+            <DropletFacts result={result} />
+          </div>
+        )}
       </section>
 
       <section className="summary-section state-section" aria-live="polite">
@@ -103,38 +153,62 @@ export function SummaryPanel({ result, busy, dirty, status }: SummaryPanelProps)
 
       <section className="summary-section detected-section">
         <div className="summary-heading">
-          <h2>检测平台</h2>
-          <span>{features?.length ?? 0} 项</span>
+          <h2>{droplet ? "检测液滴" : "检测平台"}</h2>
+          <span>
+            {droplet
+              ? `${result?.dropletMeasurements.length ?? 0} 项`
+              : `${result?.plateauFeatures.length ?? 0} 项`}
+          </span>
         </div>
-        {!features || features.length === 0 ? (
+        {droplet ? (
+          !result || result.dropletMeasurements.length === 0 ? (
+            <div className="compact-empty">
+              <Waves size={20} aria-hidden="true" />
+              <p>{result ? "当前参数下未检出可配对的液滴。" : "运行分析后在这里复核液滴结果。"}</p>
+            </div>
+          ) : (
+            <ol className="feature-ledger">
+              {result.dropletMeasurements.slice(0, 12).map((measurement) => (
+                <li key={measurement.number}>
+                  <span className="feature-number">{measurement.number}</span>
+                  <span>
+                    <strong>Δ {formatMeasurement(measurement.correctedSignal, 6)}</strong>
+                    <small>
+                      中心 {formatMeasurement(measurement.center, 4)} ·{" "}
+                      {formatReferenceMode(measurement.referenceMode)}
+                    </small>
+                  </span>
+                  <CheckCircle2 size={15} aria-label="已测量" />
+                </li>
+              ))}
+            </ol>
+          )
+        ) : !result || result.plateauFeatures.length === 0 ? (
           <div className="compact-empty">
             <Activity size={20} aria-hidden="true" />
             <p>{result ? "当前参数下未检测到特征。" : "运行分析后在这里复核检测项。"}</p>
           </div>
         ) : (
           <ol className="feature-ledger">
-            {features.slice(0, 12).map((feature) => (
+            {result.plateauFeatures.slice(0, 12).map((feature) => (
               <li key={feature.number}>
                 <span className="feature-number">{feature.number}</span>
                 <span>
-                  <strong>
-                    {formatMeasurement(
-                      feature.center,
-                      4,
-                    )}
-                  </strong>
-                  <small>
-                    高度 {formatMeasurement(feature.height, 5)}
-                    {"length" in feature ? ` · 长度 ${feature.length}` : ""}
-                  </small>
+                  <strong>{formatMeasurement(feature.center, 4)}</strong>
+                  <small>高度 {formatMeasurement(feature.height, 5)} · 长度 {feature.length}</small>
                 </span>
                 <CheckCircle2 size={15} aria-label="已检测" />
               </li>
             ))}
           </ol>
         )}
-        {features && features.length > 12 && (
-          <p className="ledger-overflow">其余 {features.length - 12} 项见下方结果表。</p>
+        {!droplet && result && result.plateauFeatures.length > 12 && (
+          <p className="ledger-overflow">其余 {result.plateauFeatures.length - 12} 项见下方结果表。</p>
+        )}
+        {droplet && result && result.dropletMeasurements.length > 12 && (
+          <p className="ledger-overflow">
+            其余 {result.dropletMeasurements.length - 12} 项见下方结果表。
+          </p>
         )}
       </section>
     </aside>

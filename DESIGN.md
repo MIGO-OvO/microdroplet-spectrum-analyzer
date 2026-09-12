@@ -261,9 +261,10 @@ components:
 
 ### Application Bar
 
-- **Composition:** 62px 最小高度的白色命令栏，依次容纳 38px Logo/双语品牌、可截断文件状态、双模式切换、加载与运行操作。
+- **Composition:** 62px 最小高度的白色命令栏，依次容纳 38px Logo/双语品牌、可截断文件状态、加载与运行操作。
 - **Brand:** 液滴 Logo 只在此处出现；不生成液滴导航项、流程节点或背景水印。
 - **Priority:** “运行分析”是右上唯一科学蓝主操作；“加载数据”保持白底描边。
+- **Not here:** 分析模式（平台检测／液滴双电平分析）是参数而非导航，因此放在参数面板顶部的“分析模式”分组中，命令栏不重复承载它。
 
 ### Buttons
 
@@ -276,6 +277,8 @@ components:
 
 - **Style:** 1px 细边框、6px 外圆角和 3px 内边距；两个 31px 高选项使用 4px 圆角。
 - **State:** 未选项透明且为次级石墨，当前项为白底、深科学蓝字、650 字重和选中段阴影；`aria-pressed` 保留语义。
+- **Analysis mode（参数面板）:** 两个纵向卡片各 8px 内边距、7px 外圆角，上行 12px/640 模式名、下行 10px 说明；未选项为轻冷白底加结构边框，当前项为浅蓝强调面、科学蓝边框和 3px 内嵌强调条，`role="radiogroup"` + `aria-checked` 保留语义。
+- **Naming:** 模式名使用“平台检测”与“液滴双电平分析”，与结果表、图表图例和导出表头保持一致的中文术语。
 
 ### Inputs & Switches
 
@@ -289,26 +292,31 @@ components:
 - **Corner Style:** 工作面统一 7px 圆角，白底和 1px 结构边框。
 - **Shadow Strategy:** 静止面板无阴影，依靠画布与边框分层。
 - **Internal Padding:** 主要面板段使用 13–14px，工具栏与表格标题使用 5–14px 的紧凑组合。
-- **Disclosure:** 参数分组使用 42px 最小高度摘要行和组内底部分隔线；展开箭头以 160ms `ease-out` 旋转 180°。
+- **Disclosure:** 参数分组使用 42px 最小高度摘要行和组内底部分隔线；展开箭头以 160ms `ease-out` 旋转 180°。少量常用参数之外的判定容差收在嵌套的“高级判定容差”里，用虚线分隔而非第二个面板，避免参数区出现并列卡片。
 
 ### Signal Chart
 
 - **Role:** 中央视觉与操作中心；高 DPI Canvas 同时绘制原始灰蓝线、1.8px 科学蓝处理线、琥珀虚线/范围带和绿色检测点。
 - **Frame:** 白底、冷灰网格、11px 等宽刻度；标题栏和帮助栏各用细分隔线封边。
 - **Interaction:** 十字光标悬停读数，滚轮缩放、拖动平移、双击或按 0 重置，并提供可聚焦 Canvas 与可见工具按钮。
-- **Markers:** 检测点为 4.5px 半径绿色圆点、2px 白描边；可选标签用 10px 半粗体和半透明白底。
+- **Markers（平台模式）:** 检测点为 4.5px 半径绿色圆点、2px 白描边；可选标签用 10px 半粗体和半透明白底。
+- **Markers（液滴模式）:** 稳定区段电平按分类着色——Platform 为 6px 绿色方块、Bottom 为 4px 科学蓝圆点、Unknown 为 3.6px 琥珀圆点；`Unknown` 使用第三种颜色是刻意的，它正是需要人工复核的段落。校正信号 Δ 用 1.4px 梅红竖线连接 Platform Reference 与 Bottom 电平，并在参考端加 3px 实心圆点。
+- **Hover（液滴模式）:** 仅在被指向的液滴上绘制参考构造——左右 Platform 电平虚线、Platform Reference 虚线与连接段；提示框追加液滴编号、Bottom、左右 Platform、Platform Reference、Corrected ΔSignal、参考方式、置信度与质量标记。
+- **Amplitude window:** 只有平台模式绘制幅度上下限虚线与范围带；液滴模式不设置该范围，纵轴只框住数据本身。
 
 ### Statistics & Feature Ledger
 
 - **Metrics:** 两列细线网格，每格 9px 内边距；10px 标签配科学蓝图标，17px/650 读数承担主层级。
 - **States:** 处理中、待更新、已同步分别使用蓝、琥珀、绿，但始终附带图标和文字。
 - **Ledger:** 每行最小高度 43px，圆形编号、主值、次级高度/长度和确认图标对齐；右栏只展示前十二项。
+- **Droplet metrics:** 液滴模式把四个读数替换为液滴数量、平均校正信号 Δ、RSD 与校正信号标准差，并在网格下方用同一事实表样式追加平均 Bottom 电平、平均 Platform Reference、双侧插值/单侧参考数量、低置信度液滴数与未分类稳定区段数；台账每行主值为 `Δ …`，次行为中心位置与参考方式。
 
 ### Results Table
 
 - **Density:** 表格最小宽度 780px，单元格高 31px、内边距 5px 12px、字号 11px，数值右对齐并使用等宽数字。
 - **Header:** `#f2f5f6` 冷灰粘性表头，650 字重；行号居中且使用深科学蓝。
 - **State:** 行悬停使用 `#f1f8fa`，空状态用图标和明确文字；横向滚动容器可通过键盘聚焦。
+- **Droplet schema:** 液滴模式改列“液滴 #/中心位置/Bottom 电平/左 Platform/右 Platform/Platform Reference/Corrected ΔSignal/参考方式/置信度/质量标记”，缺失的单侧参考显示 `—`，`Corrected ΔSignal` 使用深科学蓝 640 字重突出；同一分析结果下方以折叠区提供“稳定区段证据”表（前 200 段），完整证据写在 Excel“稳定区段”工作表。
 
 ### Column Selection Dialog
 

@@ -17,6 +17,7 @@ pub fn run() {
             commands::analyze_signal,
             commands::plot_view,
             commands::suggest_plateau_parameters,
+            commands::suggest_droplet_parameters,
             commands::export_results,
             commands::export_chart,
         ])

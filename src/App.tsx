@@ -25,12 +25,14 @@ import {
   isTauriRuntime,
   loadDataFile,
   runAnalysis,
+  suggestDropletParameters,
   suggestParameters,
 } from "./lib/bridge";
 import { errorMessage, formatPointCount } from "./lib/format";
-import { SAMPLE_RESULT, SAMPLE_SUMMARY } from "./lib/sample";
+import { SAMPLE_DROPLET_RESULT, SAMPLE_RESULT, SAMPLE_SUMMARY } from "./lib/sample";
 import {
   DEFAULT_REQUEST,
+  type AnalysisMode,
   type AnalysisRequest,
   type AnalysisResponse,
   type DatasetSummary,
@@ -50,7 +52,41 @@ function cloneDefaultRequest(): AnalysisRequest {
     ...DEFAULT_REQUEST,
     preprocess: { ...DEFAULT_REQUEST.preprocess },
     plateau: { ...DEFAULT_REQUEST.plateau },
+    droplet: { ...DEFAULT_REQUEST.droplet },
   };
+}
+
+/** Summary line for a finished run, phrased for the mode that produced it. */
+function completionStatus(result: AnalysisResponse): string {
+  if (result.mode === "droplet") {
+    const count = result.dropletMeasurements.length;
+    return count > 0
+      ? `分析完成，测得 ${count} 个液滴的校正信号 Δ。`
+      : "分析完成：当前参数下未得到可配对的液滴。";
+  }
+  return result.statistics.featureCount > 0
+    ? `分析完成，检测到 ${result.statistics.featureCount} 个平台。`
+    : "分析完成，当前参数下未检测到平台。";
+}
+
+/** The mode-specific suggestion command, with the returned patch to apply. */
+async function requestSuggestion(
+  mode: AnalysisMode,
+  preprocess: AnalysisRequest["preprocess"],
+) {
+  const suggestion =
+    mode === "droplet"
+      ? await suggestDropletParameters(preprocess)
+      : await suggestParameters(preprocess);
+  const patch =
+    mode === "droplet"
+      ? suggestion.droplet
+        ? ({ droplet: suggestion.droplet } as const)
+        : null
+      : suggestion.plateau
+        ? ({ plateau: suggestion.plateau } as const)
+        : null;
+  return { suggestion, patch };
 }
 
 export default function App() {
@@ -90,6 +126,13 @@ export default function App() {
     summaryRef.current = summary;
   }, [summary]);
 
+  // Browser preview only: keep the demonstration payload in step with the mode so
+  // the droplet view can be inspected without the Tauri backend.
+  useEffect(() => {
+    if (desktopRuntime) return;
+    setResult(request.mode === "droplet" ? SAMPLE_DROPLET_RESULT : SAMPLE_RESULT);
+  }, [desktopRuntime, request.mode]);
+
   const executeAnalysis = useCallback(
     async (candidate?: AnalysisRequest) => {
       if (!desktopRuntime || !summaryRef.current) return;
@@ -105,11 +148,7 @@ export default function App() {
         if (sequence !== analysisSequence.current) return;
         setResult(nextResult);
         setDirty(false);
-        setStatus(
-          nextResult.statistics.featureCount > 0
-            ? `分析完成，检测到 ${nextResult.statistics.featureCount} 个平台。`
-            : `分析完成，当前参数下未检测到平台。`,
-        );
+        setStatus(completionStatus(nextResult));
       } catch (analysisError) {
         if (sequence !== analysisSequence.current) return;
         const message = errorMessage(analysisError);
@@ -172,11 +211,11 @@ export default function App() {
     try {
       const loaded = await loadDataFile(pendingFile.path, signalColumn, timeColumn);
       let nextRequest = requestRef.current;
-      if (nextRequest.mode === "plateau") {
-        const suggestion = await suggestParameters(nextRequest.preprocess);
-        if (suggestion.ok && suggestion.plateau) {
-          nextRequest = { ...nextRequest, plateau: suggestion.plateau };
-        }
+      try {
+        const { suggestion, patch } = await requestSuggestion(nextRequest.mode, nextRequest.preprocess);
+        if (suggestion.ok && patch) nextRequest = { ...nextRequest, ...patch };
+      } catch {
+        // A suggestion is a convenience: a failure must never block loading the data.
       }
       skipNextAutoRun.current = true;
       requestRef.current = nextRequest;
@@ -211,10 +250,13 @@ export default function App() {
     setSuggesting(true);
     setError(null);
     try {
-      const suggestion = await suggestParameters(requestRef.current.preprocess);
+      const { suggestion, patch } = await requestSuggestion(
+        requestRef.current.mode,
+        requestRef.current.preprocess,
+      );
       setStatus(suggestion.message);
-      if (suggestion.ok && suggestion.plateau) {
-        setRequest((current) => ({ ...current, plateau: suggestion.plateau! }));
+      if (suggestion.ok && patch) {
+        setRequest((current) => ({ ...current, ...patch }));
       }
     } catch (suggestionError) {
       const message = errorMessage(suggestionError);

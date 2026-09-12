@@ -4,18 +4,206 @@ use plotters::coord::Shift;
 use plotters::prelude::*;
 use rust_xlsxwriter::Workbook;
 
-use crate::models::{AnalysisMode, FullAnalysisResult};
+use crate::models::{
+    AnalysisMode, DropletMeasurement, FullAnalysisResult, SegmentKind, StableSegment,
+};
 
 fn excel_error(error: impl std::fmt::Display) -> String {
     format!("无法写入 Excel 文件：{error}")
 }
 
+/// Missing values must never be exported as `0`: an absent Platform and a Platform
+/// measured at zero are different facts.
+const MISSING: &str = "—";
+
+fn reference_label(measurement: &DropletMeasurement) -> String {
+    measurement.reference_mode.label().to_owned()
+}
+
+fn quality_label(measurement: &DropletMeasurement) -> String {
+    if measurement.quality_flags.is_empty() {
+        return String::new();
+    }
+    measurement
+        .quality_flags
+        .iter()
+        .map(|flag| flag.label())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn write_optional(
+    worksheet: &mut rust_xlsxwriter::Worksheet,
+    row: u32,
+    column: u16,
+    value: Option<f64>,
+) -> Result<(), String> {
+    match value {
+        Some(number) if number.is_finite() => worksheet
+            .write_number(row, column, number)
+            .map(|_| ())
+            .map_err(excel_error),
+        _ => worksheet
+            .write_string(row, column, MISSING)
+            .map(|_| ())
+            .map_err(excel_error),
+    }
+}
+
+fn write_headers(
+    worksheet: &mut rust_xlsxwriter::Worksheet,
+    headers: &[&str],
+) -> Result<(), String> {
+    for (column, header) in headers.iter().enumerate() {
+        worksheet
+            .write_string(0, column as u16, *header)
+            .map_err(excel_error)?;
+    }
+    Ok(())
+}
+
+fn set_widths(worksheet: &mut rust_xlsxwriter::Worksheet, widths: &[f64]) -> Result<(), String> {
+    for (column, width) in widths.iter().enumerate() {
+        worksheet
+            .set_column_width(column as u16, *width)
+            .map_err(excel_error)?;
+    }
+    Ok(())
+}
+
+/// Final droplet measurements: one row per Bottom, with the exact reference levels
+/// that produced each corrected Δ.
+fn export_droplet_results(
+    workbook: &mut Workbook,
+    measurements: &[DropletMeasurement],
+) -> Result<(), String> {
+    let worksheet = workbook.add_worksheet();
+    worksheet.set_name("Droplet Results").map_err(excel_error)?;
+    let headers = [
+        "液滴 #",
+        "中心位置",
+        "Bottom",
+        "左 Platform",
+        "右 Platform",
+        "Platform Reference",
+        "Corrected ΔSignal",
+        "Reference Mode",
+        "Confidence",
+        "Quality Flags",
+    ];
+    write_headers(worksheet, &headers)?;
+    for (row, measurement) in measurements.iter().enumerate() {
+        let row = row as u32 + 1;
+        worksheet
+            .write_number(row, 0, measurement.number as f64)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 1, measurement.center)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 2, measurement.bottom_level)
+            .map_err(excel_error)?;
+        write_optional(worksheet, row, 3, measurement.left_platform_level)?;
+        write_optional(worksheet, row, 4, measurement.right_platform_level)?;
+        worksheet
+            .write_number(row, 5, measurement.platform_reference)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 6, measurement.corrected_signal)
+            .map_err(excel_error)?;
+        worksheet
+            .write_string(row, 7, reference_label(measurement))
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 8, measurement.confidence)
+            .map_err(excel_error)?;
+        worksheet
+            .write_string(row, 9, quality_label(measurement))
+            .map_err(excel_error)?;
+    }
+    set_widths(
+        worksheet,
+        &[9.0, 14.0, 16.0, 16.0, 16.0, 20.0, 20.0, 16.0, 12.0, 42.0],
+    )
+}
+
+/// Algorithmic evidence: why each segment was classified the way it was.
+fn export_stable_segments(
+    workbook: &mut Workbook,
+    segments: &[StableSegment],
+) -> Result<(), String> {
+    let worksheet = workbook.add_worksheet();
+    worksheet.set_name("Stable Segments").map_err(excel_error)?;
+    let headers = [
+        "区段 #",
+        "类型",
+        "起始点",
+        "中心位置",
+        "结束点",
+        "电平(原始信号)",
+        "长度",
+        "有效长度",
+        "标准差",
+        "MAD",
+        "斜率",
+        "置信度",
+    ];
+    write_headers(worksheet, &headers)?;
+    for (row, segment) in segments.iter().enumerate() {
+        let row = row as u32 + 1;
+        worksheet
+            .write_number(row, 0, segment.number as f64)
+            .map_err(excel_error)?;
+        worksheet
+            .write_string(row, 1, segment.kind.label())
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 2, segment.start)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 3, segment.center)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 4, segment.end)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 5, segment.level)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 6, segment.length as f64)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 7, segment.effective_length as f64)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 8, segment.standard_deviation)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 9, segment.mad)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 10, segment.slope)
+            .map_err(excel_error)?;
+        worksheet
+            .write_number(row, 11, segment.confidence)
+            .map_err(excel_error)?;
+    }
+    set_widths(
+        worksheet,
+        &[
+            8.0, 12.0, 12.0, 14.0, 12.0, 18.0, 9.0, 10.0, 14.0, 14.0, 13.0, 11.0,
+        ],
+    )
+}
+
 pub fn export_results(result: &FullAnalysisResult, path: &str) -> Result<(), String> {
     let mut workbook = Workbook::new();
-    let worksheet = workbook.add_worksheet();
 
     match result.request.mode {
         AnalysisMode::Plateau => {
+            // The legacy branch keeps the default single worksheet and its exact
+            // column layout so older workbooks stay byte-comparable in structure.
+            let worksheet = workbook.add_worksheet();
             let headers = [
                 "平台 #",
                 "中心位置",
@@ -24,11 +212,7 @@ pub fn export_results(result: &FullAnalysisResult, path: &str) -> Result<(), Str
                 "高度(精炼)",
                 "长度",
             ];
-            for (column, header) in headers.iter().enumerate() {
-                worksheet
-                    .write_string(0, column as u16, *header)
-                    .map_err(excel_error)?;
-            }
+            write_headers(worksheet, &headers)?;
             for (row, feature) in result.plateau_features.iter().enumerate() {
                 let row = row as u32 + 1;
                 worksheet
@@ -50,12 +234,11 @@ pub fn export_results(result: &FullAnalysisResult, path: &str) -> Result<(), Str
                     .write_number(row, 5, feature.length as f64)
                     .map_err(excel_error)?;
             }
-            worksheet.set_column_width(0, 10).map_err(excel_error)?;
-            worksheet.set_column_width(1, 16).map_err(excel_error)?;
-            worksheet.set_column_width(2, 16).map_err(excel_error)?;
-            worksheet.set_column_width(3, 16).map_err(excel_error)?;
-            worksheet.set_column_width(4, 18).map_err(excel_error)?;
-            worksheet.set_column_width(5, 12).map_err(excel_error)?;
+            set_widths(worksheet, &[10.0, 16.0, 16.0, 16.0, 18.0, 12.0])?;
+        }
+        AnalysisMode::Droplet => {
+            export_droplet_results(&mut workbook, &result.droplet_measurements)?;
+            export_stable_segments(&mut workbook, &result.stable_segments)?;
         }
     }
 
@@ -119,6 +302,7 @@ where
 
     let title = match result.request.mode {
         AnalysisMode::Plateau => "Microdroplet Spectrum Analysis — Plateau Detection",
+        AnalysisMode::Droplet => "Microdroplet Spectrum Analysis — Dual-State Droplet Δ",
     };
     let mut chart = ChartBuilder::on(&root)
         .caption(title, ("sans-serif", 30))
@@ -171,7 +355,11 @@ where
             RGBColor(20, 125, 154),
         ))
         .map_err(|error| format!("无法绘制处理后信号：{error:?}"))?
-        .label("Processed signal")
+        .label(if result.request.mode == AnalysisMode::Droplet {
+            "Detection signal"
+        } else {
+            "Processed signal"
+        })
         .legend(|(x, y)| PathElement::new([(x, y), (x + 24, y)], RGBColor(20, 125, 154)));
 
     match result.request.mode {
@@ -185,6 +373,59 @@ where
                     )
                 }))
                 .map_err(|error| format!("无法绘制平台标记：{error:?}"))?;
+        }
+        AnalysisMode::Droplet => {
+            // One marker per stable segment, coloured by the classified state, plus a
+            // Delta-carrying marker at every Bottom that produced a measurement.
+            let platform: Vec<(f64, f64)> = result
+                .stable_segments
+                .iter()
+                .filter(|segment| segment.kind == SegmentKind::Platform)
+                .map(|segment| (segment.center, segment.level))
+                .collect();
+            let bottom: Vec<(f64, f64)> = result
+                .stable_segments
+                .iter()
+                .filter(|segment| segment.kind == SegmentKind::Bottom)
+                .map(|segment| (segment.center, segment.level))
+                .collect();
+            let unknown: Vec<(f64, f64)> = result
+                .stable_segments
+                .iter()
+                .filter(|segment| segment.kind == SegmentKind::Unknown)
+                .map(|segment| (segment.center, segment.level))
+                .collect();
+            for (label, color, points) in [
+                ("Platform", RGBColor(36, 134, 106), platform),
+                ("Bottom", RGBColor(20, 125, 154), bottom),
+                ("Unknown", RGBColor(182, 114, 22), unknown),
+            ] {
+                if points.is_empty() {
+                    continue;
+                }
+                chart
+                    .draw_series(
+                        points
+                            .iter()
+                            .map(|(x, y)| Circle::new((*x, *y), 4, color.filled())),
+                    )
+                    .map_err(|error| format!("无法绘制稳定区段标记：{error:?}"))?
+                    .label(label)
+                    .legend(move |(x, y)| Circle::new((x + 12, y), 4, color.filled()));
+            }
+            chart
+                .draw_series(result.droplet_measurements.iter().map(|measurement| {
+                    Circle::new(
+                        (measurement.center, measurement.bottom_level),
+                        7,
+                        RGBColor(217, 76, 61).stroke_width(2),
+                    )
+                }))
+                .map_err(|error| format!("无法绘制液滴标记：{error:?}"))?
+                .label("Droplet Δ")
+                .legend(|(x, y)| {
+                    Circle::new((x + 12, y), 7, RGBColor(217, 76, 61).stroke_width(2))
+                });
         }
     }
 
@@ -227,9 +468,20 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::analyzer::analyze_dataset;
-    use crate::models::{AnalysisRequest, Dataset};
+    use crate::models::{AnalysisMode, AnalysisRequest, Dataset, DropletParams, PreprocessParams};
 
     use super::*;
+
+    fn fixture_dataset(signal: Vec<f64>) -> Dataset {
+        Dataset {
+            revision: 1,
+            file_name: "fixture.csv".into(),
+            columns: Vec::new(),
+            signal: Arc::new(signal),
+            time: None,
+            dropped_rows: 0,
+        }
+    }
 
     #[test]
     fn result_workbook_and_both_chart_formats_are_written() {
@@ -237,14 +489,7 @@ mod tests {
         let mut signal = vec![0.0; 20];
         signal.extend(vec![0.3; 15]);
         signal.extend(vec![0.0; 20]);
-        let dataset = Dataset {
-            revision: 1,
-            file_name: "fixture.csv".into(),
-            columns: Vec::new(),
-            signal: Arc::new(signal),
-            time: None,
-            dropped_rows: 0,
-        };
+        let dataset = fixture_dataset(signal);
         let (result, _) = analyze_dataset(&dataset, &AnalysisRequest::default(), None);
         let workbook = directory.path().join("results.xlsx");
         let png = directory.path().join("chart.png");
@@ -257,5 +502,57 @@ mod tests {
         for path in [workbook, png, svg] {
             assert!(path.metadata().expect("export metadata").len() > 100);
         }
+    }
+
+    #[test]
+    fn droplet_export_writes_measurements_and_segment_evidence() {
+        let directory = tempdir().expect("temporary export directory");
+        // Two asymmetric states repeated three times: Platform / Bottom alternating.
+        let mut signal = Vec::new();
+        for _ in 0..3 {
+            signal.extend(vec![0.0348; 120]);
+            signal.extend(vec![0.0006169; 60]);
+        }
+        signal.extend(vec![0.0348; 120]);
+        let dataset = fixture_dataset(signal);
+        let request = AnalysisRequest {
+            mode: AnalysisMode::Droplet,
+            preprocess: PreprocessParams {
+                smooth_window: 5,
+                smooth_order: 3,
+                clipping_percentile: 100.0,
+                ..PreprocessParams::default()
+            },
+            droplet: DropletParams {
+                stability_window: 5,
+                min_segment_length: 3,
+                ..DropletParams::default()
+            },
+            ..AnalysisRequest::default()
+        };
+        let (result, _) = analyze_dataset(&dataset, &request, None);
+        assert!(
+            !result.droplet_measurements.is_empty(),
+            "fixture must produce droplets: {:?}",
+            result.warnings
+        );
+        assert!(!result.stable_segments.is_empty());
+
+        let workbook = directory.path().join("droplets.xlsx");
+        let png = directory.path().join("droplets.png");
+        let svg = directory.path().join("droplets.svg");
+        export_results(&result, workbook.to_str().unwrap()).expect("droplet Excel export");
+        export_chart(&result, png.to_str().unwrap()).expect("droplet PNG export");
+        export_chart(&result, svg.to_str().unwrap()).expect("droplet SVG export");
+        for path in [workbook, png, svg] {
+            assert!(path.metadata().expect("export metadata").len() > 100);
+        }
+
+        // A ZIP stores entry names uncompressed, so the second worksheet's part name
+        // is directly visible: the segment-evidence sheet really was written.
+        let raw = std::fs::read(directory.path().join("droplets.xlsx")).expect("workbook bytes");
+        let text = String::from_utf8_lossy(&raw);
+        assert!(text.contains("xl/worksheets/sheet1.xml"));
+        assert!(text.contains("xl/worksheets/sheet2.xml"));
     }
 }

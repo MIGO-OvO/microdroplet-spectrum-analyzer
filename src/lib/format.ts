@@ -1,3 +1,5 @@
+import type { QualityFlag, ReferenceMode, SegmentKind } from "../types";
+
 export function formatMeasurement(value: number | null, digits = 4): string {
   if (value === null || !Number.isFinite(value)) return "—";
   const magnitude = Math.abs(value);
@@ -56,3 +58,45 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "发生未知错误，请重试。";
 }
+
+/**
+ * Display labels for the droplet vocabulary.
+ *
+ * The backend sends stable machine strings; the mapping to Chinese lives here so
+ * the table, the tooltip, the summary and the chart all say the same thing.
+ */
+const SEGMENT_KIND_LABELS: Record<SegmentKind, string> = {
+  platform: "Platform（高电平）",
+  bottom: "Bottom（低电平）",
+  unknown: "Unknown（未分类）",
+};
+
+const REFERENCE_MODE_LABELS: Record<ReferenceMode, string> = {
+  interpolated: "双侧插值",
+  leftOnly: "仅左侧平台",
+  rightOnly: "仅右侧平台",
+  none: "无参考",
+};
+
+const QUALITY_FLAG_LABELS: Record<QualityFlag, string> = {
+  lowClassificationConfidence: "分类置信度偏低",
+  singleSidedReference: "单侧参考",
+  largeReferenceGap: "参考间隔过大",
+  noisyBottom: "Bottom 噪声偏高",
+  noisyPlatform: "Platform 噪声偏高",
+  nearbyUnknownSegment: "参考区间含未分类段",
+  indexTimeFallback: "改用序号插值",
+};
+
+export function formatSegmentKind(kind: SegmentKind): string {
+  return SEGMENT_KIND_LABELS[kind] ?? kind;
+}
+
+export function formatReferenceMode(mode: ReferenceMode): string {
+  return REFERENCE_MODE_LABELS[mode] ?? mode;
+}
+
+export function formatQualityFlag(flag: QualityFlag): string {
+  return QUALITY_FLAG_LABELS[flag] ?? flag;
+}
+

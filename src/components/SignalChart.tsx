@@ -9,10 +9,10 @@ import {
 } from "react";
 import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 
-import { buildAxisTicks, formatMeasurement } from "../lib/format";
+import { buildAxisTicks, formatMeasurement, formatQualityFlag, formatReferenceMode } from "../lib/format";
 import { clampRange, nearestIndex, xBounds } from "../lib/chart";
 import { isTauriRuntime, loadPlotView } from "../lib/bridge";
-import type { PlotSeries, AnalysisResponse } from "../types";
+import type { DropletMeasurement, PlotSeries, AnalysisResponse } from "../types";
 
 interface SignalChartProps {
   result: AnalysisResponse | null;
@@ -37,6 +37,13 @@ interface DragState {
 }
 
 const MARGIN = { top: 35, right: 22, bottom: 42, left: 64 };
+
+/// Marker colours: Platform is the upper state, Bottom the lower one, and an
+/// unclassified stable segment is deliberately a third, warning colour.
+const PLATFORM_COLOR = "#24866a";
+const BOTTOM_COLOR = "#1668c1";
+const UNKNOWN_COLOR = "#c98a1b";
+const DELTA_COLOR = "#a2407a";
 
 export function SignalChart({
   result,
@@ -91,8 +98,10 @@ export function SignalChart({
     const [xMin, xMax] = xBounds(result.plot.x, range);
     const start = Math.max(0, nearestIndex(plot.x, xMin) - 1);
     const end = Math.min(length - 1, nearestIndex(plot.x, xMax) + 1);
-    let yMin = Math.min(thresholdLow, thresholdHigh);
-    let yMax = Math.max(thresholdLow, thresholdHigh);
+    // The plateau mode always wants its amplitude window on screen; the droplet
+    // mode has no amplitude window at all and frames the data instead.
+    let yMin = result.mode === "plateau" ? Math.min(thresholdLow, thresholdHigh) : Infinity;
+    let yMax = result.mode === "plateau" ? Math.max(thresholdLow, thresholdHigh) : -Infinity;
     for (let i = start; i <= end; i++) {
       yMin = Math.min(yMin, plot.original[i], plot.processed[i]);
       yMax = Math.max(yMax, plot.original[i], plot.processed[i]);
@@ -107,6 +116,23 @@ export function SignalChart({
     }
     return { start, end: Math.min(length - 1, end), xMin, xMax, yMin: yBounds.current.min, yMax: yBounds.current.max };
   }, [range, result, plot, thresholdHigh, thresholdLow]);
+
+  // The droplet under the pointer, if any. Hovering is the only time the local
+  // reference construction is drawn, so the plot stays readable at rest.
+  const activeMeasurement = useMemo<DropletMeasurement | null>(() => {
+    if (!hover || !result || result.mode !== "droplet" || !visible) return null;
+    let best: DropletMeasurement | null = null;
+    let bestDistance = Infinity;
+    for (const measurement of result.dropletMeasurements) {
+      const distance = Math.abs(measurement.center - hover.x);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = measurement;
+      }
+    }
+    const tolerance = (visible.xMax - visible.xMin) * 0.05 || 1;
+    return bestDistance <= tolerance ? best : null;
+  }, [hover, result, visible]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -233,30 +259,119 @@ export function SignalChart({
     drawSeries(plot.original, "#71848f", 1);
     drawSeries(plot.processed, "#147d9a", 1.8);
 
-    const features = result.plateauFeatures.filter((feature) => feature.center >= visible.xMin && feature.center <= visible.xMax);
-    let labelRight = -Infinity;
-    for (const feature of features.slice(0, 200)) {
-      const xValue = feature.center;
-      if (xValue < visible.xMin || xValue > visible.xMax) continue;
-      const x = scaleX(xValue);
-      const y = scaleY(feature.height);
-      context.fillStyle = "#24866a";
-      context.strokeStyle = "#ffffff";
-      context.lineWidth = 2;
-      context.beginPath();
-      context.arc(x, y, 4.5, 0, Math.PI * 2);
-      context.fill();
-      context.stroke();
-      if (showLabels && x >= labelRight + 50) {
-        const label = `${feature.number} · ${formatMeasurement(feature.height, 4)}`;
-        context.font = "600 10px system-ui, sans-serif";
-        const textWidth = context.measureText(label).width;
-        labelRight = x + textWidth / 2;
-        context.fillStyle = "rgba(255, 255, 255, 0.94)";
-        context.fillRect(x - textWidth / 2 - 4, y - 22, textWidth + 8, 15);
-        context.fillStyle = "#1e2a32";
-        context.textAlign = "center";
-        context.fillText(label, x, y - 11);
+    if (result.mode === "droplet") {
+      // Stable-segment evidence: the level measured on the raw signal for every
+      // segment, coloured by the two-state classification. Unknown segments are a
+      // third colour on purpose — they are the ones a reviewer must look at.
+      for (const segment of result.stableSegments) {
+        if (segment.center < visible.xMin || segment.center > visible.xMax) continue;
+        const x = scaleX(segment.center);
+        const y = scaleY(segment.level);
+        const color =
+          segment.kind === "platform"
+            ? PLATFORM_COLOR
+            : segment.kind === "bottom"
+              ? BOTTOM_COLOR
+              : UNKNOWN_COLOR;
+        context.fillStyle = color;
+        context.strokeStyle = "rgba(255, 255, 255, 0.9)";
+        context.lineWidth = 1.5;
+        context.beginPath();
+        if (segment.kind === "platform") {
+          // Platform reference: a small square so it never competes with the droplet.
+          context.rect(x - 3, y - 3, 6, 6);
+        } else {
+          context.arc(x, y, segment.kind === "bottom" ? 4 : 3.6, 0, Math.PI * 2);
+        }
+        context.fill();
+        context.stroke();
+      }
+
+      // Corrected Δ: the vertical distance from the interpolated Platform reference
+      // down to the Bottom level, at the Bottom's own x position.
+      for (const measurement of result.dropletMeasurements) {
+        if (measurement.center < visible.xMin || measurement.center > visible.xMax) continue;
+        const x = scaleX(measurement.center);
+        const referenceY = scaleY(measurement.platformReference);
+        const bottomY = scaleY(measurement.bottomLevel);
+        context.save();
+        context.strokeStyle = DELTA_COLOR;
+        context.lineWidth = 1.4;
+        context.beginPath();
+        context.moveTo(x, referenceY);
+        context.lineTo(x, bottomY);
+        context.stroke();
+        context.beginPath();
+        context.arc(x, referenceY, 3, 0, Math.PI * 2);
+        context.fillStyle = DELTA_COLOR;
+        context.fill();
+        context.restore();
+        if (showLabels && measurement.number % 5 === 1) {
+          const label = `Δ ${formatMeasurement(measurement.correctedSignal, 4)}`;
+          context.font = "600 10px system-ui, sans-serif";
+          context.textAlign = "center";
+          const textWidth = context.measureText(label).width;
+          const anchorY = Math.max(MARGIN.top + 12, (referenceY + bottomY) / 2);
+          context.fillStyle = "rgba(255, 255, 255, 0.94)";
+          context.fillRect(x - textWidth / 2 - 4, anchorY - 11, textWidth + 8, 15);
+          context.fillStyle = DELTA_COLOR;
+          context.fillText(label, x, anchorY);
+        }
+      }
+
+      // On hover, show how that one reference was built: the two Platform levels
+      // and the interpolation between them.
+      if (activeMeasurement) {
+        const measurement = activeMeasurement;
+        const x = scaleX(measurement.center);
+        context.save();
+        context.strokeStyle = DELTA_COLOR;
+        context.setLineDash([4, 4]);
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(scaleX(measurement.center - (visible.xMax - visible.xMin) * 0.08), scaleY(measurement.platformReference));
+        context.lineTo(x, scaleY(measurement.platformReference));
+        context.stroke();
+        if (measurement.leftPlatformLevel != null) {
+          context.beginPath();
+          context.moveTo(MARGIN.left, scaleY(measurement.leftPlatformLevel));
+          context.lineTo(x, scaleY(measurement.leftPlatformLevel));
+          context.stroke();
+        }
+        if (measurement.rightPlatformLevel != null) {
+          context.beginPath();
+          context.moveTo(x, scaleY(measurement.rightPlatformLevel));
+          context.lineTo(MARGIN.left + plotWidth, scaleY(measurement.rightPlatformLevel));
+          context.stroke();
+        }
+        context.restore();
+      }
+    } else {
+      const features = result.plateauFeatures.filter((feature) => feature.center >= visible.xMin && feature.center <= visible.xMax);
+      let labelRight = -Infinity;
+      for (const feature of features.slice(0, 200)) {
+        const xValue = feature.center;
+        if (xValue < visible.xMin || xValue > visible.xMax) continue;
+        const x = scaleX(xValue);
+        const y = scaleY(feature.height);
+        context.fillStyle = PLATFORM_COLOR;
+        context.strokeStyle = "#ffffff";
+        context.lineWidth = 2;
+        context.beginPath();
+        context.arc(x, y, 4.5, 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+        if (showLabels && x >= labelRight + 50) {
+          const label = `${feature.number} · ${formatMeasurement(feature.height, 4)}`;
+          context.font = "600 10px system-ui, sans-serif";
+          const textWidth = context.measureText(label).width;
+          labelRight = x + textWidth / 2;
+          context.fillStyle = "rgba(255, 255, 255, 0.94)";
+          context.fillRect(x - textWidth / 2 - 4, y - 22, textWidth + 8, 15);
+          context.fillStyle = "#1e2a32";
+          context.textAlign = "center";
+          context.fillText(label, x, y - 11);
+        }
       }
     }
 
@@ -270,7 +385,7 @@ export function SignalChart({
     context.rotate(-Math.PI / 2);
     context.fillText("信号强度", 0, 0);
     context.restore();
-  }, [hasRealTime, result, plot, showLabels, size, thresholdHigh, thresholdLow, visible]);
+  }, [activeMeasurement, hasRealTime, result, plot, showLabels, size, thresholdHigh, thresholdLow, visible]);
 
   const plotGeometry = () => {
     const rectangle = canvasRef.current?.getBoundingClientRect();
@@ -372,12 +487,21 @@ export function SignalChart({
       <header className="chart-heading">
         <div>
           <h2 id="chart-title">信号预览</h2>
-          <span>平台区间检测</span>
+          <span>{result?.mode === "droplet" ? "液滴双电平检测" : "平台区间检测"}</span>
         </div>
         <div className="chart-legend" aria-label="图例">
           <span><i className="legend-line original" />原始信号</span>
           <span><i className="legend-line processed" />处理后信号</span>
-          <span><i className="legend-dot" />检测结果</span>
+          {result?.mode === "droplet" ? (
+            <>
+              <span><i className="legend-square platform" />Platform</span>
+              <span><i className="legend-dot bottom" />Bottom</span>
+              <span><i className="legend-dot unknown" />Unknown</span>
+              <span><i className="legend-delta" />Corrected ΔSignal</span>
+            </>
+          ) : (
+            <span><i className="legend-dot" />检测结果</span>
+          )}
           {result?.mode === "plateau" && (
             <span>
               <i className="legend-range" />
@@ -403,7 +527,11 @@ export function SignalChart({
           ref={canvasRef}
           className="signal-canvas"
           role="img"
-          aria-label="原始信号、处理后信号、检测结果和检测范围图；滚轮缩放，拖动平移，按 0 重置"
+          aria-label={
+            result?.mode === "droplet"
+              ? "原始信号、处理后信号、稳定区段电平与校正信号 Δ 图；悬停查看单个液滴的参考构造；滚轮缩放，拖动平移，按 0 重置"
+              : "原始信号、处理后信号、检测结果和检测范围图；滚轮缩放，拖动平移，按 0 重置"
+          }
           tabIndex={0}
           onWheel={handleWheel}
           onDoubleClick={() => setRange([0, 1])}
@@ -425,11 +553,43 @@ export function SignalChart({
             <strong>{hasRealTime ? "时间" : "数据点"} {formatMeasurement(hover.x, 4)}</strong>
             <span>原始 {formatMeasurement(hover.original, 6)}</span>
             <span>处理后 {formatMeasurement(hover.processed, 6)}</span>
+            {activeMeasurement && (
+              <div className="tooltip-droplet">
+                <em>液滴 #{activeMeasurement.number}</em>
+                <span>中心 {formatMeasurement(activeMeasurement.center, 4)}</span>
+                <span>Bottom {formatMeasurement(activeMeasurement.bottomLevel, 6)}</span>
+                <span>
+                  左 Platform {formatMeasurement(activeMeasurement.leftPlatformLevel ?? null, 6)}
+                  {" · "}
+                  右 Platform {formatMeasurement(activeMeasurement.rightPlatformLevel ?? null, 6)}
+                </span>
+                <span>
+                  Platform Reference {formatMeasurement(activeMeasurement.platformReference, 6)}
+                </span>
+                <span className="tooltip-delta">
+                  Corrected ΔSignal {formatMeasurement(activeMeasurement.correctedSignal, 6)}
+                </span>
+                <span>参考方式 {formatReferenceMode(activeMeasurement.referenceMode)}</span>
+                <span>置信度 {activeMeasurement.confidence.toFixed(3)}</span>
+                <span>
+                  质量标记{" "}
+                  {activeMeasurement.qualityFlags.length === 0
+                    ? "—"
+                    : activeMeasurement.qualityFlags.map(formatQualityFlag).join("、")}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
       <footer className="chart-help">
-        <span>{detailError ? "局部细节读取失败，请稍后缩放重试" : "滚轮缩放 · 拖动平移 · 双击重置 · 调参保留缩放"}</span>
+        <span>
+          {detailError
+            ? "局部细节读取失败，请稍后缩放重试"
+            : result?.mode === "droplet"
+              ? "滚轮缩放 · 拖动平移 · 双击重置 · 悬停液滴查看参考构造"
+              : "滚轮缩放 · 拖动平移 · 双击重置 · 调参保留缩放"}
+        </span>
         <span>当前显示 {Number(((range[1] - range[0]) * 100).toPrecision(3))}% 数据范围</span>
       </footer>
     </section>
