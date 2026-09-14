@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Analysis pipeline selected by the user.
 ///
 /// `Plateau` keeps the legacy "continuous region inside an amplitude window"
-/// detector. `Droplet` runs the dual-state stable-segment engine, which does not
-/// use an absolute amplitude window at all.
+/// detector. `Droplet` supports explicit high/low windows or automatic stable-segment classification.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum AnalysisMode {
@@ -78,6 +77,9 @@ impl Default for PlateauParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DropletParams {
+    /// Explicit windows on the processed detection signal; None uses automatic classification.
+    #[serde(default)]
+    pub amplitude_bands: Option<AmplitudeBands>,
     /// Minimum number of samples a stable run must span.
     pub min_segment_length: usize,
     /// Maximum number of samples a stable run may span; `0` disables the limit.
@@ -107,6 +109,7 @@ pub struct DropletParams {
 impl Default for DropletParams {
     fn default() -> Self {
         Self {
+            amplitude_bands: None,
             min_segment_length: 8,
             max_segment_length: 0,
             stability_window: 15,
@@ -123,9 +126,27 @@ impl Default for DropletParams {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AmplitudeBands {
+    pub low_min: f64,
+    pub low_max: f64,
+    pub high_min: f64,
+    pub high_max: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct XRange {
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisRequest {
+    #[serde(default)]
+    pub x_range: Option<XRange>,
     pub mode: AnalysisMode,
     pub preprocess: PreprocessParams,
     pub plateau: PlateauParams,
@@ -357,6 +378,7 @@ pub enum DetectionKey {
 /// while building it, so later stages never have to re-scan the raw record.
 #[derive(Debug, Clone)]
 pub struct PreprocessCache {
+    pub sample_range: (usize, usize),
     pub dataset_revision: u64,
     pub params: PreprocessParams,
     pub detection: DetectionKey,
@@ -416,6 +438,8 @@ pub struct ParameterSuggestion {
 #[serde(rename_all = "camelCase")]
 pub struct SuggestionRequest {
     pub preprocess: PreprocessParams,
+    #[serde(default)]
+    pub x_range: Option<XRange>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

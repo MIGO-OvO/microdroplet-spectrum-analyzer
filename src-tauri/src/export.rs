@@ -242,6 +242,32 @@ pub fn export_results(result: &FullAnalysisResult, path: &str) -> Result<(), Str
         }
     }
 
+    let metadata = workbook.add_worksheet();
+    metadata
+        .set_name("Analysis Parameters")
+        .map_err(excel_error)?;
+    metadata
+        .write_string(0, 0, "Processing parameters (JSON)")
+        .map_err(excel_error)?;
+    metadata
+        .write_string(
+            0,
+            1,
+            serde_json::to_string(&result.request).map_err(|e| e.to_string())?,
+        )
+        .map_err(excel_error)?;
+    metadata.write_string(1, 0, "X axis").map_err(excel_error)?;
+    metadata
+        .write_string(
+            1,
+            1,
+            if result.has_real_time {
+                "Time column"
+            } else {
+                "Zero-based valid sample index"
+            },
+        )
+        .map_err(excel_error)?;
     workbook.save(path).map_err(excel_error)
 }
 
@@ -287,6 +313,12 @@ where
             .chain(result.processed.iter().copied()),
     )
     .unwrap_or((0.0, 1.0));
+    if result.request.mode == AnalysisMode::Droplet
+        && let Some(bands) = &result.request.droplet.amplitude_bands
+    {
+        y_min = y_min.min(bands.low_min);
+        y_max = y_max.max(bands.high_max);
+    }
     if (x_max - x_min).abs() < f64::EPSILON {
         x_min -= 0.5;
         x_max += 0.5;
@@ -337,6 +369,29 @@ where
     }
 
     let indices = chart_indices(result.original.len(), 50_000);
+    if result.request.mode == AnalysisMode::Droplet
+        && let Some(bands) = &result.request.droplet.amplitude_bands
+    {
+        for (lower, upper, color) in [
+            (bands.low_min, bands.low_max, RGBColor(22, 104, 193)),
+            (bands.high_min, bands.high_max, RGBColor(36, 134, 106)),
+        ] {
+            chart
+                .draw_series(std::iter::once(Rectangle::new(
+                    [(x_min, lower), (x_max, upper)],
+                    color.mix(0.07).filled(),
+                )))
+                .map_err(|error| format!("无法绘制幅度区间：{error:?}"))?;
+            for value in [lower, upper] {
+                chart
+                    .draw_series(LineSeries::new(
+                        [(x_min, value), (x_max, value)],
+                        color.mix(0.5),
+                    ))
+                    .map_err(|error| format!("无法绘制幅度边界：{error:?}"))?;
+            }
+        }
+    }
     chart
         .draw_series(LineSeries::new(
             indices

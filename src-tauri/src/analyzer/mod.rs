@@ -36,6 +36,7 @@ const MAX_PREVIEW_POINTS: usize = 12_000;
 
 pub fn normalize_request(request: &AnalysisRequest) -> AnalysisRequest {
     AnalysisRequest {
+        x_range: request.x_range.clone(),
         mode: request.mode,
         preprocess: normalize_preprocess_params(&request.preprocess),
         plateau: normalize_plateau_params(&request.plateau),
@@ -43,10 +44,65 @@ pub fn normalize_request(request: &AnalysisRequest) -> AnalysisRequest {
     }
 }
 
+/// Inclusive bounds use the loaded time column, or zero-based valid sample indices.
+pub fn selected_range(
+    dataset: &Dataset,
+    range: Option<&crate::models::XRange>,
+) -> Result<(usize, usize), String> {
+    let length = dataset.signal.len();
+    let Some(range) = range else {
+        return Ok((0, length));
+    };
+    if range
+        .min
+        .into_iter()
+        .chain(range.max)
+        .any(|v| !v.is_finite())
+        || matches!((range.min, range.max), (Some(a), Some(b)) if a > b)
+    {
+        return Err("横坐标范围无效：起点必须小于或等于终点，且为有限数值。".into());
+    }
+    let at = |i: usize| dataset.time.as_ref().map_or(i as f64, |time| time[i]);
+    let partition = |bound: f64, inclusive: bool| {
+        let (mut lo, mut hi) = (0, length);
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if at(mid) < bound || (inclusive && at(mid) == bound) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        lo
+    };
+    let start = range.min.map_or(0, |v| partition(v, false));
+    let end = range.max.map_or(length, |v| partition(v, true));
+    if end.saturating_sub(start) < 3 {
+        return Err("横坐标范围内至少需要 3 个有效数据点。".into());
+    }
+    Ok((start, end))
+}
+
+pub fn validate_request(dataset: &Dataset, request: &AnalysisRequest) -> Result<(), String> {
+    selected_range(dataset, request.x_range.as_ref())?;
+    if request.mode == AnalysisMode::Droplet
+        && let Some(b) = &request.droplet.amplitude_bands
+        && (![b.low_min, b.low_max, b.high_min, b.high_max]
+            .iter()
+            .all(|v| v.is_finite())
+            || b.low_min >= b.low_max
+            || b.high_min >= b.high_max
+            || b.low_max >= b.high_min)
+    {
+        return Err("幅度区间无效：每组下限须小于上限，且低平台上限须小于高平台下限。".into());
+    }
+    Ok(())
+}
+
 /// Run one analysis pass.
 ///
 /// The preprocessing cache is keyed by `(dataset revision, preprocess params,
-/// detection pipeline)`. Segmentation, classification and measurement parameters
+/// selected sample range, detection pipeline)`. Segmentation, classification and measurement parameters
 /// are intentionally *not* part of the key: changing them must not force a
 /// rebuild of the heavy preprocessing stage.
 pub fn analyze_dataset(
@@ -55,6 +111,9 @@ pub fn analyze_dataset(
     cache: Option<&PreprocessCache>,
 ) -> (FullAnalysisResult, PreprocessCache) {
     let request = normalize_request(request);
+    // Command validation rejects invalid input; direct callers receive an empty result below.
+    let validation = validate_request(dataset, &request);
+    let (start, end) = selected_range(dataset, request.x_range.as_ref()).unwrap_or((0, 0));
     let detection_key = match request.mode {
         AnalysisMode::Plateau => DetectionKey::Plateau,
         AnalysisMode::Droplet => droplet_detection_key(&request.droplet),
@@ -64,20 +123,27 @@ pub fn analyze_dataset(
         Some(cache)
             if cache.dataset_revision == dataset.revision
                 && cache.params == request.preprocess
+                && cache.sample_range == (start, end)
                 && cache.detection == detection_key =>
         {
             (Arc::clone(&cache.values), cache.noise, cache.scale, true)
         }
         _ => match request.mode {
             AnalysisMode::Plateau => (
-                Arc::new(preprocess_signal(&dataset.signal, &request.preprocess)),
+                Arc::new(preprocess_signal(
+                    &dataset.signal[start..end],
+                    &request.preprocess,
+                )),
                 0.0,
                 0.0,
                 false,
             ),
             AnalysisMode::Droplet => {
-                let detection =
-                    build_detection_signal(&dataset.signal, &request.preprocess, &request.droplet);
+                let detection = build_detection_signal(
+                    &dataset.signal[start..end],
+                    &request.preprocess,
+                    &request.droplet,
+                );
                 (
                     Arc::new(detection.values),
                     detection.noise,
@@ -89,14 +155,8 @@ pub fn analyze_dataset(
     };
 
     let x = dataset.time.as_ref().map_or_else(
-        || {
-            Arc::new(
-                (0..dataset.signal.len())
-                    .map(|index| index as f64)
-                    .collect(),
-            )
-        },
-        Arc::clone,
+        || Arc::new((start..end).map(|index| index as f64).collect()),
+        |time| Arc::new(time[start..end].to_vec()),
     );
 
     let mut result = FullAnalysisResult {
@@ -104,7 +164,7 @@ pub fn analyze_dataset(
         request,
         has_real_time: dataset.time.is_some(),
         x,
-        original: Arc::clone(&dataset.signal),
+        original: Arc::new(dataset.signal[start..end].to_vec()),
         processed: Arc::clone(&processed),
         plateau_features: Vec::new(),
         statistics: AnalysisStatistics::default(),
@@ -115,32 +175,50 @@ pub fn analyze_dataset(
         warnings: Vec::new(),
     };
 
-    match result.request.mode {
-        AnalysisMode::Plateau => {
-            result.plateau_features =
-                detect_plateaus(&processed, &result.x, &result.request.plateau);
-            result.statistics = plateau_statistics(&result.plateau_features);
-        }
-        AnalysisMode::Droplet => {
-            let smooth_half = (result.request.preprocess.smooth_window / 2).max(1);
-            let analysis = run_droplet(
-                &dataset.signal,
-                &result.x,
-                &processed,
-                noise,
-                scale,
-                &result.request.droplet,
-                result.has_real_time,
-                smooth_half,
-            );
-            result.stable_segments = analysis.segments;
-            result.droplet_measurements = analysis.measurements;
-            result.droplet_statistics = analysis.statistics;
-            result.warnings = analysis.warnings;
+    if let Err(message) = validation {
+        result.warnings.push(message);
+    } else {
+        match result.request.mode {
+            AnalysisMode::Plateau => {
+                result.plateau_features =
+                    detect_plateaus(&processed, &result.x, &result.request.plateau);
+                result.statistics = plateau_statistics(&result.plateau_features);
+            }
+            AnalysisMode::Droplet => {
+                let smooth_half = (result.request.preprocess.smooth_window / 2).max(1);
+                let analysis = run_droplet(
+                    &dataset.signal[start..end],
+                    &result.x,
+                    &processed,
+                    noise,
+                    scale,
+                    &result.request.droplet,
+                    result.has_real_time,
+                    smooth_half,
+                );
+                result.stable_segments = analysis.segments;
+                result.droplet_measurements = analysis.measurements;
+                result.droplet_statistics = analysis.statistics;
+                result.warnings = analysis.warnings;
+            }
         }
     }
 
+    // Keep reported sample indices in the original loaded-file coordinate system.
+    for feature in &mut result.plateau_features {
+        feature.center_index += start;
+    }
+    for segment in &mut result.stable_segments {
+        segment.start_index += start;
+        segment.end_index += start;
+        segment.center_index += start;
+    }
+    for measurement in &mut result.droplet_measurements {
+        measurement.center_index += start;
+    }
+
     let updated_cache = PreprocessCache {
+        sample_range: (start, end),
         dataset_revision: dataset.revision,
         params: result.request.preprocess.clone(),
         detection: detection_key,
@@ -279,6 +357,197 @@ mod tests {
 
     use super::test_support::dataset;
     use super::*;
+
+    #[test]
+    fn manual_bands_and_x_range_are_honored() {
+        // A slowly sloping two-level signal followed by a large environmental offset.
+        let data = dataset(
+            (0..1400)
+                .map(|i| {
+                    let level = if (i / 100) % 2 == 0 { 0.07 } else { 0.005 };
+                    level + (i % 100) as f64 * 0.00002 + if i >= 700 { 1.0 } else { 0.0 }
+                })
+                .collect(),
+        );
+        let mut payload = serde_json::to_value(AnalysisRequest::default()).unwrap();
+        payload["mode"] = "droplet".into();
+        payload["xRange"] = serde_json::json!({"min":100.0,"max":599.0});
+        payload["droplet"]["amplitudeBands"] = serde_json::json!({
+            "lowMin":0.0,"lowMax":0.01,"highMin":0.06,"highMax":0.08
+        });
+        let request: AnalysisRequest = serde_json::from_value(payload).unwrap();
+        let (result, _) = analyze_dataset(&data, &request, None);
+        assert_eq!(
+            result.droplet_measurements.len(),
+            3,
+            "{:?}",
+            result.warnings
+        );
+        assert!(
+            result
+                .stable_segments
+                .iter()
+                .all(|s| s.start >= 100.0 && s.end <= 599.0)
+        );
+        assert!(result.stable_segments.iter().all(|s| s.start_index >= 100));
+        for m in &result.droplet_measurements {
+            assert!((m.corrected_signal - 0.065).abs() < 0.0002);
+        }
+    }
+
+    #[test]
+    fn ranges_isolate_preprocessing_and_invalidate_cache() {
+        use crate::models::XRange;
+        let mut raw = vec![1e6; 100];
+        raw.extend((0..500).map(|i| if (i / 100) % 2 == 0 { 0.2 } else { 0.0 }));
+        raw.extend(vec![-1e6; 100]);
+        let data = dataset(raw);
+        let request = AnalysisRequest {
+            x_range: Some(XRange {
+                min: Some(100.0),
+                max: Some(599.0),
+            }),
+            ..Default::default()
+        };
+        let (result, cache) = analyze_dataset(&data, &request, None);
+        let isolated = dataset(data.signal[100..600].to_vec());
+        let (reference, _) = analyze_dataset(&isolated, &AnalysisRequest::default(), None);
+        assert_eq!(result.processed, reference.processed);
+        assert_eq!(
+            result.statistics.mean_height,
+            reference.statistics.mean_height
+        );
+        assert_eq!(result.x.first(), Some(&100.0));
+        assert_eq!(result.x.last(), Some(&599.0));
+        assert_eq!(
+            result.plateau_features[0].center_index,
+            reference.plateau_features[0].center_index + 100
+        );
+        let (same, _) = analyze_dataset(&data, &request, Some(&cache));
+        assert!(same.used_cached_preprocess);
+        let changed = AnalysisRequest {
+            x_range: None,
+            ..request
+        };
+        let (whole, _) = analyze_dataset(&data, &changed, Some(&cache));
+        assert!(!whole.used_cached_preprocess);
+    }
+
+    #[test]
+    fn time_bounds_are_inclusive_and_invalid_ranges_are_rejected() {
+        use crate::models::{AmplitudeBands, DropletParams, XRange};
+        let data =
+            test_support::dataset_with_time(vec![0.0; 6], vec![-1.0, 0.0, 0.2, 0.2, 1.7, 8.0]);
+        assert_eq!(
+            selected_range(
+                &data,
+                Some(&XRange {
+                    min: Some(0.0),
+                    max: Some(0.2)
+                })
+            )
+            .unwrap(),
+            (1, 4)
+        );
+        assert_eq!(
+            selected_range(
+                &data,
+                Some(&XRange {
+                    min: None,
+                    max: Some(0.2)
+                })
+            )
+            .unwrap(),
+            (0, 4)
+        );
+        for range in [
+            XRange {
+                min: Some(8.0),
+                max: Some(-1.0),
+            },
+            XRange {
+                min: Some(10.0),
+                max: None,
+            },
+            XRange {
+                min: Some(f64::NAN),
+                max: None,
+            },
+        ] {
+            assert!(selected_range(&data, Some(&range)).is_err());
+        }
+        let request = AnalysisRequest {
+            mode: AnalysisMode::Droplet,
+            droplet: DropletParams {
+                amplitude_bands: Some(AmplitudeBands {
+                    low_min: 0.0,
+                    low_max: 0.1,
+                    high_min: 0.1,
+                    high_max: 0.2,
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(validate_request(&data, &request).is_err());
+        assert!(
+            analyze_dataset(&data, &request, None)
+                .0
+                .droplet_measurements
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn manual_windows_follow_processed_baseline_but_measure_raw_levels() {
+        use crate::models::{AmplitudeBands, DropletParams};
+        let data = dataset(
+            (0..700)
+                .map(|i| if (i / 100) % 2 == 0 { 0.07 } else { 0.005 })
+                .collect(),
+        );
+        let mut request = AnalysisRequest {
+            mode: AnalysisMode::Droplet,
+            droplet: DropletParams {
+                amplitude_bands: Some(AmplitudeBands {
+                    low_min: 0.0,
+                    low_max: 0.01,
+                    high_min: 0.06,
+                    high_max: 0.08,
+                }),
+                allow_single_sided_reference: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let (before, cache) = analyze_dataset(&data, &request, None);
+        request.preprocess.manual_baseline = 0.1;
+        request.droplet.amplitude_bands = Some(AmplitudeBands {
+            low_min: -0.1,
+            low_max: -0.09,
+            high_min: -0.04,
+            high_max: -0.02,
+        });
+        let (after, _) = analyze_dataset(&data, &request, Some(&cache));
+        assert_eq!(after.droplet_measurements.len(), 3);
+        assert!(!after.used_cached_preprocess);
+        for (a, b) in before
+            .droplet_measurements
+            .iter()
+            .zip(&after.droplet_measurements)
+        {
+            assert!((a.corrected_signal - b.corrected_signal).abs() < 1e-12);
+            assert!((b.bottom_level - 0.005).abs() < 1e-12);
+        }
+        request.droplet.amplitude_bands.as_mut().unwrap().high_max = -0.015;
+        let (_, updated_cache) = analyze_dataset(&data, &request, None);
+        request.droplet.amplitude_bands.as_mut().unwrap().low_min = -0.11;
+        assert!(
+            analyze_dataset(&data, &request, Some(&updated_cache))
+                .0
+                .used_cached_preprocess
+        );
+    }
 
     #[test]
     #[ignore = "manual release-mode performance measurement"]

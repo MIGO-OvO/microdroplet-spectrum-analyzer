@@ -43,9 +43,10 @@ export function runAnalysis(request: AnalysisRequest): Promise<AnalysisResponse>
 
 export function suggestParameters(
   preprocess: PreprocessParams,
+  xRange?: AnalysisRequest["xRange"],
 ): Promise<ParameterSuggestion> {
   return invoke<ParameterSuggestion>("suggest_plateau_parameters", {
-    request: { preprocess },
+    request: { preprocess, xRange },
   });
 }
 
@@ -59,9 +60,10 @@ export function suggestParameters(
  */
 export function suggestDropletParameters(
   preprocess: PreprocessParams,
+  xRange?: AnalysisRequest["xRange"],
 ): Promise<ParameterSuggestion> {
   return invoke<ParameterSuggestion>("suggest_droplet_parameters", {
-    request: { preprocess },
+    request: { preprocess, xRange },
   });
 }
 

@@ -3,7 +3,7 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri)](https://v2.tauri.app/)
 [![MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-[English](README.md) · [下载 v0.1.0](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.0)
+[English](README.md) · [下载 v0.1.1](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.1)
 
 面向微液滴光学测量的本地 Windows 分析工作台：导入信号、调整平滑、检测平台、放大复核并导出结果。
 实验数据仅在本机处理，不上传云端。
@@ -32,6 +32,11 @@
 - 后台分析，调参停止 350 ms 后自动更新，只保留最新待执行请求。
 - 结果表每页 100 项，Excel 导出始终包含全部检测结果；图表可导出 PNG/SVG。
 - 自定义标题栏，支持拖动、最小化、最大化／还原及关闭。
+- 功能侧栏切换数据处理与工作曲线；处理后的文件可按用户输入浓度加入标定点。
+- 工作曲线支持本地草稿记忆、保存/编辑、JSON 备份与导入、OLS/WLS 线性回归及诊断指标。
+- 调用已保存方程反算未知浓度；导出工作曲线/残差 PNG、SVG，以及 Origin 可用 CSV 和 Excel。
+
+详见[工作曲线使用说明、指标定义与边界](docs/calibration.md)。
 
 ## 液滴双电平分析
 
@@ -65,7 +70,7 @@
 ## 使用方法与边界
 
 1. 点击“加载数据”，选择信号列及可选时间列。
-2. 在“分析模式”中选择平台检测或液滴双电平分析；液滴模式无需幅度上下限，只需稳定长度、稳定性窗口与边缘裁剪。
+2. 在“分析模式”中选择平台检测或液滴双电平分析；液滴模式默认无需幅度上下限，只需稳定长度、稳定性窗口与边缘裁剪，也可改为手动高低幅度区间。
 3. 检查自动建议的参数，再按实验特征调整平滑和检测参数。
 4. 放大观察单独平台或液滴；液滴模式下悬停可查看该液滴的参考构造。参数更新后视图保持不变。
 5. 待结果同步后导出 Excel 或图表。
@@ -134,7 +139,15 @@ npm run tauri -- build --bundles nsis
 感谢 Tauri、React、Vite、Lucide、calamine、csv、rust_xlsxwriter 和 Plotters。
 原 Python 实现保存在 Git 历史中。
 
-## v0.1.0 更新
+## v0.1.1 更新
+
+- 新增“工作曲线”面板：标定点采集、草稿记忆、本地曲线库、JSON 备份与导入、OLS/WLS 回归及诊断指标、
+  未知浓度反算，以及 Origin 可用的 CSV/Excel 与 PNG/SVG 导出。详见[工作曲线说明](docs/calibration.md)。
+- 液滴双电平分析支持手动高低幅度区间，并可限定分析横坐标范围；范围在预处理前截取，
+  坐标与数据点索引不重新编号。详见[手动双平台说明](docs/dual-platform-analysis.md)。
+- 新增紧凑功能侧栏切换“数据处理／工作曲线”；结果表、图表与 Excel 导出增加本次分析参数。
+
+### v0.1.0
 
 发布 Rust/Tauri Windows NSIS 安装版；优化区间识别、大文件交互和缩放保持，
 移除传统寻峰，加入自定义标题栏。

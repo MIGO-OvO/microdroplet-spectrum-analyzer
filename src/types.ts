@@ -45,6 +45,7 @@ export interface PlateauParams {
  * every physical number still comes from the raw signal.
  */
 export interface DropletParams {
+  amplitudeBands?: AmplitudeBands | null;
   minSegmentLength: number;
   maxSegmentLength: number;
   stabilityWindow: number;
@@ -59,7 +60,16 @@ export interface DropletParams {
   referenceGapFactor: number;
 }
 
+export interface AmplitudeBands {
+  lowMin: number;
+  lowMax: number;
+  highMin: number;
+  highMax: number;
+}
+export interface XRange { min: number | null; max: number | null }
+
 export interface AnalysisRequest {
+  xRange?: XRange | null;
   mode: AnalysisMode;
   preprocess: PreprocessParams;
   plateau: PlateauParams;

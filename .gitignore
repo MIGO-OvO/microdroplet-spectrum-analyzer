@@ -39,3 +39,9 @@ Thumbs.db
 .impeccable/sketches/
 .impeccable/direction-options.json
 .impeccable/surface-brief-body.md
+
+# Local calibration QA screenshots
+.qa-calibration/
+
+# Local WorkBuddy session data
+.workbuddy/

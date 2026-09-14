@@ -12,12 +12,13 @@ import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { buildAxisTicks, formatMeasurement, formatQualityFlag, formatReferenceMode } from "../lib/format";
 import { clampRange, nearestIndex, xBounds } from "../lib/chart";
 import { isTauriRuntime, loadPlotView } from "../lib/bridge";
-import type { DropletMeasurement, PlotSeries, AnalysisResponse } from "../types";
+import type { AmplitudeBands, DropletMeasurement, PlotSeries, AnalysisResponse } from "../types";
 
 interface SignalChartProps {
   result: AnalysisResponse | null;
   thresholdLow: number;
   thresholdHigh: number;
+  amplitudeBands?: AmplitudeBands | null;
   hasRealTime: boolean;
   showLabels: boolean;
 }
@@ -49,6 +50,7 @@ export function SignalChart({
   result,
   thresholdLow,
   thresholdHigh,
+  amplitudeBands,
   hasRealTime,
   showLabels,
 }: SignalChartProps) {
@@ -98,10 +100,13 @@ export function SignalChart({
     const [xMin, xMax] = xBounds(result.plot.x, range);
     const start = Math.max(0, nearestIndex(plot.x, xMin) - 1);
     const end = Math.min(length - 1, nearestIndex(plot.x, xMax) + 1);
-    // The plateau mode always wants its amplitude window on screen; the droplet
-    // mode has no amplitude window at all and frames the data instead.
+    // Frame explicit amplitude windows in both modes; automatic mode frames only data.
     let yMin = result.mode === "plateau" ? Math.min(thresholdLow, thresholdHigh) : Infinity;
     let yMax = result.mode === "plateau" ? Math.max(thresholdLow, thresholdHigh) : -Infinity;
+    if (result.mode === "droplet" && amplitudeBands) {
+      yMin = amplitudeBands.lowMin;
+      yMax = amplitudeBands.highMax;
+    }
     for (let i = start; i <= end; i++) {
       yMin = Math.min(yMin, plot.original[i], plot.processed[i]);
       yMax = Math.max(yMax, plot.original[i], plot.processed[i]);
@@ -115,7 +120,7 @@ export function SignalChart({
       yBounds.current = { range, min: yMin - padding, max: yMax + padding };
     }
     return { start, end: Math.min(length - 1, end), xMin, xMax, yMin: yBounds.current.min, yMax: yBounds.current.max };
-  }, [range, result, plot, thresholdHigh, thresholdLow]);
+  }, [range, result, plot, thresholdHigh, thresholdLow, amplitudeBands]);
 
   // The droplet under the pointer, if any. Hovering is the only time the local
   // reference construction is drawn, so the plot stays readable at rest.
@@ -184,6 +189,15 @@ export function SignalChart({
       context.fillStyle = "rgba(214, 144, 39, 0.075)";
       context.fillRect(MARGIN.left, top, plotWidth, bottom - top);
     }
+    if (result.mode === "droplet" && amplitudeBands) {
+      for (const [lower, upper, color] of [
+        [amplitudeBands.lowMin, amplitudeBands.lowMax, "rgba(22, 104, 193, 0.07)"],
+        [amplitudeBands.highMin, amplitudeBands.highMax, "rgba(36, 134, 106, 0.07)"],
+      ] as const) {
+        context.fillStyle = color;
+        context.fillRect(MARGIN.left, scaleY(upper), plotWidth, scaleY(lower) - scaleY(upper));
+      }
+    }
 
     context.restore();
     context.font = "11px ui-monospace, SFMono-Regular, Consolas, monospace";
@@ -226,14 +240,17 @@ export function SignalChart({
     context.beginPath();
     context.rect(MARGIN.left, MARGIN.top, plotWidth, plotHeight);
     context.clip();
-    if (result.mode === "plateau") {
+    if (result.mode === "plateau" || amplitudeBands) {
       context.save();
       context.setLineDash([6, 4]);
       context.lineWidth = 1;
-      for (const [value, color] of [
+      for (const [value, color] of (result.mode === "droplet" && amplitudeBands ? [
+        [amplitudeBands.highMin, PLATFORM_COLOR], [amplitudeBands.highMax, PLATFORM_COLOR],
+        [amplitudeBands.lowMin, BOTTOM_COLOR], [amplitudeBands.lowMax, BOTTOM_COLOR],
+      ] as const : [
         [thresholdLow, "#d69027"],
         [thresholdHigh, "#d69027"],
-      ] as const) {
+      ] as const)) {
         const y = scaleY(value);
         context.strokeStyle = color;
         context.beginPath();
@@ -385,7 +402,7 @@ export function SignalChart({
     context.rotate(-Math.PI / 2);
     context.fillText("信号强度", 0, 0);
     context.restore();
-  }, [activeMeasurement, hasRealTime, result, plot, showLabels, size, thresholdHigh, thresholdLow, visible]);
+  }, [activeMeasurement, hasRealTime, result, plot, showLabels, size, thresholdHigh, thresholdLow, visible, amplitudeBands]);
 
   const plotGeometry = () => {
     const rectangle = canvasRef.current?.getBoundingClientRect();
@@ -494,10 +511,11 @@ export function SignalChart({
           <span><i className="legend-line processed" />处理后信号</span>
           {result?.mode === "droplet" ? (
             <>
-              <span><i className="legend-square platform" />Platform</span>
-              <span><i className="legend-dot bottom" />Bottom</span>
+              <span><i className="legend-square platform" />高平台</span>
+              <span><i className="legend-dot bottom" />低平台</span>
               <span><i className="legend-dot unknown" />Unknown</span>
               <span><i className="legend-delta" />Corrected ΔSignal</span>
+              {amplitudeBands && <span title="幅度窗口作用于处理后信号；高低平台电平标记取自原始信号">高区间 {formatMeasurement(amplitudeBands.highMin, 3)}–{formatMeasurement(amplitudeBands.highMax, 3)} · 低区间 {formatMeasurement(amplitudeBands.lowMin, 3)}–{formatMeasurement(amplitudeBands.lowMax, 3)}</span>}
             </>
           ) : (
             <span><i className="legend-dot" />检测结果</span>

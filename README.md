@@ -5,7 +5,7 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust)](https://www.rust-lang.org/)
 [![MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-[简体中文](README.zh-CN.md) · [Download v0.1.0](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.0)
+[简体中文](README.zh-CN.md) · [Download v0.1.1](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.1)
 
 ## Overview
 
@@ -45,8 +45,10 @@ Windows 10/11 x64 is the release target. The installer is unsigned; organization
 `[thresholdLow, thresholdHigh]` window, refined by length and edge deviation. It is the right tool when the
 interesting quantity is the width or the height of an elevated plateau.
 
-**液滴双电平分析 (Dual-state droplet analysis)** models a rectangular two-level record instead. It never uses an
-absolute amplitude band. The pipeline is:
+**液滴双电平分析 (Dual-state droplet analysis)** supports explicit, non-overlapping high/low amplitude windows
+on the processed signal, as well as the existing automatic classifier. An optional inclusive x range is applied
+before preprocessing; displayed/exported measurements retain the original coordinates. See the
+[manual dual-platform guide](docs/dual-platform-analysis.md). The automatic pipeline is:
 
 ```text
 raw signal ─┬─ symmetric despike (Hampel) → Savitzky–Golay → detection signal
@@ -91,7 +93,7 @@ filtering. High-duty-cycle signals without a discernible baseline, overlapping p
 non-flat features may require manual thresholds. No real experimental dataset or accuracy benchmark is included.
 Above one million valid points, automatic refresh is disabled after the initial analysis.
 
-Chart exports retain a bounded whole-file rendering sample; Excel exports contain detected features, not the raw signal.
+Chart exports retain a bounded rendering sample of the selected analysis range; Excel exports contain detected features and parameters, not the raw signal.
 All calculations use full-resolution data. Excel input still requires workbook decoding in memory.
 
 ## Measured scope
@@ -169,7 +171,14 @@ Share only anonymized or synthetic data you are authorized to publish. Contribut
 Built with Tauri, React, Vite, Lucide, calamine, csv, rust_xlsxwriter, and Plotters.
 The prior Python application is preserved in Git history.
 
-## v0.1.0
+## v0.1.1
+
+Adds the calibration (working curve) workspace and manual dual-platform analysis: explicit high/low amplitude
+windows with an inclusive analysis x range, a functional sidebar, weighted linear regression with diagnostics,
+concentration back-calculation, and Origin-ready CSV/Excel exports.
+See [docs/calibration.md](docs/calibration.md) and [docs/dual-platform-analysis.md](docs/dual-platform-analysis.md).
+
+### v0.1.0
 
 First Windows NSIS release of the Rust/Tauri workspace: improved automatic intervals, large-file interaction,
 persistent zoom, plateau-only analysis, and a custom title bar.

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "curves": [{
+    "id": "synthetic-independent-replicates",
+    "name": "合成验证曲线（非实验数据）",
+    "unit": "μmol/L",
+    "weighting": "ols",
+    "updatedAt": "2026-09-09T00:00:00Z",
+    "points": [
+      {"id":"0","concentration":0,"response":1,"weight":1,"source":"synthetic-0-a.csv","capturedAt":"2026-09-09T00:00:00Z","parameters":null},
+      {"id":"1","concentration":0,"response":2,"weight":2,"source":"synthetic-0-b.csv","capturedAt":"2026-09-09T00:00:00Z","parameters":null},
+      {"id":"2","concentration":1,"response":2,"weight":3,"source":"synthetic-1-a.csv","capturedAt":"2026-09-09T00:00:00Z","parameters":null},
+      {"id":"3","concentration":1,"response":4,"weight":4,"source":"synthetic-1-b.csv","capturedAt":"2026-09-09T00:00:00Z","parameters":null},
+      {"id":"4","concentration":2,"response":5,"weight":5,"source":"synthetic-2-a.csv","capturedAt":"2026-09-09T00:00:00Z","parameters":null},
+      {"id":"5","concentration":2,"response":6,"weight":6,"source":"synthetic-2-b.csv","capturedAt":"2026-09-09T00:00:00Z","parameters":null}
+    ]
+  }]
+}

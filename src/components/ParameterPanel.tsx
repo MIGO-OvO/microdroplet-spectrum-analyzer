@@ -13,8 +13,9 @@ import type { AnalysisMode, AnalysisRequest, DatasetSummary } from "../types";
 
 interface NumberFieldProps {
   label: string;
-  value: number;
+  value: number | null;
   onChange: (value: number) => void;
+  onClear?: () => void;
   min: number;
   max: number;
   step: number;
@@ -33,18 +34,21 @@ function NumberField({
   disabled,
   title,
   significant,
+  onClear,
 }: NumberFieldProps) {
   return (
     <label className="number-field" title={title}>
       <span>{label}</span>
       <input
         type="number"
-        value={significant && Number(value.toPrecision(2)) === value ? value.toPrecision(2) : value}
+        value={value === null ? "" : significant && Number(value.toPrecision(2)) === value ? value.toPrecision(2) : value}
+        placeholder={onClear ? "不限" : undefined}
         min={min}
         max={max}
         step={step}
         disabled={disabled}
         onChange={(event) => {
+          if (!event.target.value && onClear) { onClear(); return; }
           const next = event.target.valueAsNumber;
           if (Number.isFinite(next)) onChange(next);
         }}
@@ -89,8 +93,18 @@ export function ParameterPanel({
     onRequestChange({ ...request, plateau: { ...request.plateau, ...patch } });
   const updateDroplet = (patch: Partial<AnalysisRequest["droplet"]>) =>
     onRequestChange({ ...request, droplet: { ...request.droplet, ...patch } });
-  const setMode = (mode: AnalysisMode) => onRequestChange({ ...request, mode });
+  const initialBands = () => {
+    const highMin = request.plateau.thresholdLow;
+    const highMax = request.plateau.thresholdHigh;
+    const width = Math.max(Math.abs(highMax - highMin), 0.001);
+    const lowMax = Math.min(0.01, highMin - width * 0.1);
+    return { lowMin: lowMax - width * 0.2, lowMax, highMin, highMax };
+  };
+  const setMode = (mode: AnalysisMode) => onRequestChange({ ...request, mode,
+    droplet: mode === "droplet" && request.droplet.amplitudeBands === undefined
+      ? { ...request.droplet, amplitudeBands: initialBands() } : request.droplet });
   const droplet = request.mode === "droplet";
+  const bands = request.droplet.amplitudeBands;
 
   return (
     <aside className="parameter-panel" aria-label="分析参数">
@@ -155,10 +169,24 @@ export function ParameterPanel({
             onClick={() => setMode("droplet")}
           >
             <strong>液滴双电平分析</strong>
-            <small>Bottom / Platform 自动分类与校正信号 Δ</small>
+            <small>高低平台区间检测与校正信号 Δ</small>
           </button>
         </div>
       </div>
+
+      <details className="parameter-group" open>
+        <summary><span><SlidersHorizontal size={17} aria-hidden="true" />分析横坐标范围</span><ChevronDown size={16} aria-hidden="true" /></summary>
+        <div className="parameter-fields">
+          <p className="panel-empty-copy">{summary?.hasRealTime ? "使用时间列单位" : "使用从 0 开始的有效数据点序号"}，包含两端；留空不限。仅分析此范围，不等同于图表缩放。</p>
+          <NumberField label="横坐标起点" value={request.xRange?.min ?? null} min={-1e15} max={1e15} step={1} disabled={disabled}
+            onChange={min => onRequestChange({ ...request, xRange: { min, max: request.xRange?.max ?? null } })}
+            onClear={() => onRequestChange({ ...request, xRange: { min: null, max: request.xRange?.max ?? null } })} />
+          <NumberField label="横坐标终点" value={request.xRange?.max ?? null} min={-1e15} max={1e15} step={1} disabled={disabled}
+            onChange={max => onRequestChange({ ...request, xRange: { max, min: request.xRange?.min ?? null } })}
+            onClear={() => onRequestChange({ ...request, xRange: { max: null, min: request.xRange?.min ?? null } })} />
+          <button className="button quiet full-width" disabled={disabled || !request.xRange} onClick={() => onRequestChange({ ...request, xRange: null })}>恢复全文件范围</button>
+        </div>
+      </details>
 
       <details className="parameter-group" open>
         <summary>
@@ -169,7 +197,7 @@ export function ParameterPanel({
           <ChevronDown size={16} aria-hidden="true" />
         </summary>
         <div className="parameter-fields">
-          <label className="field-stack compact">
+          {droplet ? <p className="panel-empty-copy">双平台使用对称去尖峰 + 平滑；幅度区间对应减去手动基线后的处理信号。电平测量仍取自原始信号。</p> : <><label className="field-stack compact">
             <span>平滑过滤方式</span>
             <select
               value={request.preprocess.filterMode}
@@ -204,6 +232,7 @@ export function ParameterPanel({
             title="用于去除孤立突变点，分析时会归一化为奇数。"
             onChange={(medianWindow) => updatePreprocess({ medianWindow })}
           />
+          </>}
           <NumberField
             label="平滑窗口"
             value={request.preprocess.smoothWindow}
@@ -227,7 +256,7 @@ export function ParameterPanel({
             disabled={disabled}
             title={
               droplet
-                ? "只平移检测信号，用于稳定区段判定；校正信号 Δ 与基线无关。"
+                ? "从检测信号减去基线；手动幅度窗口需相应调整。对同一组平台，高低差 Δ 不受恒定平移影响。"
                 : "从整条处理后信号中减去该数值。"
             }
             onChange={(manualBaseline) => updatePreprocess({ manualBaseline })}
@@ -245,6 +274,20 @@ export function ParameterPanel({
             <ChevronDown size={16} aria-hidden="true" />
           </summary>
           <div className="parameter-fields">
+            <label className="field-stack compact"><span>平台识别方式</span>
+              <select disabled={disabled} value={bands ? "manual" : "auto"}
+                onChange={e => updateDroplet({ amplitudeBands: e.target.value === "manual" ? initialBands() : null })}>
+                <option value="manual">手动高低幅度区间</option><option value="auto">自动稳定段分类</option>
+              </select>
+            </label>
+            {bands && <>
+              <p className="panel-empty-copy">分别设置高、低平台的处理后幅度；区间不可重叠。初始值仅供起点，请按当前信号调整。</p>
+              {([["高平台幅度下限", "highMin"], ["高平台幅度上限", "highMax"], ["低平台幅度下限", "lowMin"], ["低平台幅度上限", "lowMax"]] as const).map(([label, key]) =>
+                <NumberField key={key} label={label} value={bands[key]} min={-1e15} max={1e15} step={0.001} disabled={disabled}
+                  onChange={value => updateDroplet({ amplitudeBands: { ...bands, [key]: value } })} />)}
+              {!(bands.lowMin < bands.lowMax && bands.lowMax < bands.highMin && bands.highMin < bands.highMax) &&
+                <p className="calibration-error" role="alert">须满足：低平台下限 &lt; 低平台上限 &lt; 高平台下限 &lt; 高平台上限。</p>}
+            </>}
             <NumberField
               label="最小稳定长度"
               value={request.droplet.minSegmentLength}
@@ -261,7 +304,7 @@ export function ParameterPanel({
               min={3}
               max={501}
               step={2}
-              disabled={disabled}
+              disabled={disabled || !!bands}
               title="局部稳定性判定的窗口宽度，分析时会归一化为奇数。窗口越大，判定越严格。"
               onChange={(stabilityWindow) => updateDroplet({ stabilityWindow })}
             />
@@ -341,7 +384,7 @@ export function ParameterPanel({
                   min={2}
                   max={50}
                   step={0.5}
-                  disabled={disabled}
+                  disabled={disabled || !!bands}
                   title="局部离散度上限相对检测噪声的倍数。"
                   onChange={(noiseFactor) => updateDroplet({ noiseFactor })}
                 />
@@ -351,7 +394,7 @@ export function ParameterPanel({
                   min={1}
                   max={50}
                   step={0.5}
-                  disabled={disabled}
+                  disabled={disabled || !!bands}
                   title="局部半窗中值差上限相对检测噪声的倍数。"
                   onChange={(slopeFactor) => updateDroplet({ slopeFactor })}
                 />
@@ -361,7 +404,7 @@ export function ParameterPanel({
                   min={0.5}
                   max={20}
                   step={0.5}
-                  disabled={disabled}
+                  disabled={disabled || !!bands}
                   title="高低两态间距必须超过噪声与簇内离散度的该倍数，否则不判定为双电平。"
                   onChange={(clusterSeparationFactor) => updateDroplet({ clusterSeparationFactor })}
                 />
@@ -381,10 +424,10 @@ export function ParameterPanel({
               className="button quiet full-width"
               type="button"
               onClick={onSuggest}
-              disabled={disabled || !summary || suggesting}
+              disabled={disabled || !summary || suggesting || !!bands}
             >
               <Sparkles size={16} aria-hidden="true" />
-              {suggesting ? "正在计算建议…" : "自动建议参数"}
+              {suggesting ? "正在计算建议…" : bands ? "自动建议仅用于自动分类" : "自动建议参数"}
             </button>
           </div>
         </details>

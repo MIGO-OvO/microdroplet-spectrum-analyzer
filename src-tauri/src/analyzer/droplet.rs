@@ -124,6 +124,7 @@ pub fn normalize_droplet_params(params: &DropletParams) -> DropletParams {
         max_segment_length = min_segment_length;
     }
     DropletParams {
+        amplitude_bands: params.amplitude_bands.clone(),
         min_segment_length,
         max_segment_length,
         stability_window: odd_window(params.stability_window).min(999),
@@ -340,7 +341,7 @@ fn measure_range(context: &MeasureContext<'_>, start: usize, end: usize) -> Opti
     let budget =
         (RESIDUAL_SPREAD_SIGMA * context.raw_noise.max(1e-12 * robust_scale(interior))).max(1e-300);
     let spread = measured.spread;
-    if spread > budget {
+    if context.params.amplitude_bands.is_none() && spread > budget {
         return None;
     }
     let center_index = (start + end) / 2;
@@ -360,7 +361,11 @@ fn measure_range(context: &MeasureContext<'_>, start: usize, end: usize) -> Opti
         effective_length: measured.effective_length,
         kind: SegmentKind::Unknown,
         // Stability score only; the two-state classification multiplies into it.
-        confidence: (1.0 - spread / budget).clamp(0.0, 1.0),
+        confidence: if context.params.amplitude_bands.is_some() {
+            1.0
+        } else {
+            (1.0 - spread / budget).clamp(0.0, 1.0)
+        },
     })
 }
 
@@ -1083,6 +1088,49 @@ pub(crate) fn run_droplet(
         raw_noise,
         guard_base: smooth_half.max(1),
     };
+
+    if let Some(bands) = &params.amplitude_bands {
+        let mut segments = Vec::new();
+        for (kind, lower, upper) in [
+            (SegmentKind::Bottom, bands.low_min, bands.low_max),
+            (SegmentKind::Platform, bands.high_min, bands.high_max),
+        ] {
+            let mask: Vec<bool> = detection
+                .iter()
+                .map(|v| *v >= lower && *v <= upper)
+                .collect();
+            for (start, end) in contiguous_ranges(&mask) {
+                let length = end - start + 1;
+                if length < params.min_segment_length
+                    || (params.max_segment_length > 0 && length > params.max_segment_length)
+                {
+                    continue;
+                }
+                if let Some(mut segment) = measure_range(&context, start, end) {
+                    segment.kind = kind;
+                    segments.push(segment);
+                }
+            }
+        }
+        segments.sort_by_key(|s| s.start_index);
+        for (i, segment) in segments.iter_mut().enumerate() {
+            segment.number = i + 1;
+        }
+        let (measurements, mut warnings, _) =
+            build_measurements(&segments, x, params, raw_noise, has_real_time, floor);
+        if measurements.is_empty() {
+            warnings.push(
+                "指定幅度区间内没有可配对的高低平台，请检查区间、横坐标范围和最小长度。".into(),
+            );
+        }
+        let statistics = droplet_statistics(&measurements, &segments);
+        return DropletAnalysis {
+            segments,
+            measurements,
+            statistics,
+            warnings,
+        };
+    }
 
     let ranges = detect_stable_ranges(detection, params, noise, scale);
     let mut segments = measure_ranges(&context, ranges);

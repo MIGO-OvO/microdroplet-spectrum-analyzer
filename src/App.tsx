@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { TitleBar } from "./components/TitleBar";
+import { CalibrationPanel } from "./components/CalibrationPanel";
 import logoUrl from "../asset/LOGO.svg";
 import { ColumnDialog } from "./components/ColumnDialog";
 import { ParameterPanel } from "./components/ParameterPanel";
@@ -73,11 +74,12 @@ function completionStatus(result: AnalysisResponse): string {
 async function requestSuggestion(
   mode: AnalysisMode,
   preprocess: AnalysisRequest["preprocess"],
+  xRange?: AnalysisRequest["xRange"],
 ) {
   const suggestion =
     mode === "droplet"
-      ? await suggestDropletParameters(preprocess)
-      : await suggestParameters(preprocess);
+      ? await suggestDropletParameters(preprocess, xRange)
+      : await suggestParameters(preprocess, xRange);
   const patch =
     mode === "droplet"
       ? suggestion.droplet
@@ -91,6 +93,7 @@ async function requestSuggestion(
 
 export default function App() {
   const desktopRuntime = isTauriRuntime();
+  const [panel, setPanel] = useState<"analysis" | "calibration">("analysis");
   const [request, setRequest] = useState<AnalysisRequest>(cloneDefaultRequest);
   const [summary, setSummary] = useState<DatasetSummary | null>(
     desktopRuntime ? null : SAMPLE_SUMMARY,
@@ -141,6 +144,7 @@ export default function App() {
       const sequence = ++analysisSequence.current;
       const currentRequest = candidate ?? requestRef.current;
       setAnalyzing(true);
+      setDirty(true);
       setError(null);
       setStatus("正在后台分析信号…");
       try {
@@ -182,6 +186,7 @@ export default function App() {
   }, [autoRefresh, desktopRuntime, executeAnalysis, request, summary]);
 
   const handleChooseFile = useCallback(async () => {
+    if (running.current) { setStatus("请等待当前分析完成后再更换文件。"); return; }
     if (!desktopRuntime) {
       setStatus("文件选择仅在 Tauri 桌面应用中可用；当前显示合成构图预览。");
       return;
@@ -210,10 +215,10 @@ export default function App() {
     setError(null);
     try {
       const loaded = await loadDataFile(pendingFile.path, signalColumn, timeColumn);
-      let nextRequest = requestRef.current;
+      let nextRequest = { ...requestRef.current, xRange: null };
       try {
         const { suggestion, patch } = await requestSuggestion(nextRequest.mode, nextRequest.preprocess);
-        if (suggestion.ok && patch) nextRequest = { ...nextRequest, ...patch };
+        if (suggestion.ok && patch && (nextRequest.mode !== "droplet" || !nextRequest.droplet.amplitudeBands)) nextRequest = { ...nextRequest, ...patch };
       } catch {
         // A suggestion is a convenience: a failure must never block loading the data.
       }
@@ -253,6 +258,7 @@ export default function App() {
       const { suggestion, patch } = await requestSuggestion(
         requestRef.current.mode,
         requestRef.current.preprocess,
+        requestRef.current.xRange,
       );
       setStatus(suggestion.message);
       if (suggestion.ok && patch) {
@@ -348,7 +354,16 @@ export default function App() {
         </div>
       )}
 
-      <main className="app-main">
+      <div className="functional-shell">
+      <nav className="functional-nav" aria-label="功能面板">
+        <button type="button" aria-current={panel === "analysis" ? "page" : undefined} onClick={() => setPanel("analysis")}>数据处理</button>
+        <button type="button" aria-current={panel === "calibration" ? "page" : undefined} onClick={() => setPanel("calibration")}>工作曲线</button>
+      </nav>
+      <div className="functional-content">
+      <CalibrationPanel active={panel === "calibration"} desktop={desktopRuntime}
+        result={dirty || analyzing || fileBusy ? null : result} summary={summary} request={request}
+        onOpen={() => setPanel("calibration")} />
+      <main className="app-main" hidden={panel !== "analysis"}>
         <div className="workspace-grid">
           <ParameterPanel
             summary={summary}
@@ -368,6 +383,7 @@ export default function App() {
             result={result}
             thresholdLow={request.plateau.thresholdLow}
             thresholdHigh={request.plateau.thresholdHigh}
+            amplitudeBands={request.mode === "droplet" ? request.droplet.amplitudeBands : null}
             hasRealTime={summary?.hasRealTime ?? false}
             showLabels={showLabels}
           />
@@ -381,6 +397,8 @@ export default function App() {
           onExportChart={() => void handleExportChart()}
         />
       </main>
+      </div>
+      </div>
 
       <footer className="status-bar">
         <span className={analyzing ? "status-dot running" : error ? "status-dot error" : "status-dot ready"} />

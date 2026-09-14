@@ -1,4 +1,5 @@
 mod analyzer;
+mod calibration_io;
 mod commands;
 mod data;
 mod export;
@@ -20,6 +21,8 @@ pub fn run() {
             commands::suggest_droplet_parameters,
             commands::export_results,
             commands::export_chart,
+            calibration_io::read_calibration_artifact,
+            calibration_io::write_calibration_artifact,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Microdroplet Spectrum Analyzer");

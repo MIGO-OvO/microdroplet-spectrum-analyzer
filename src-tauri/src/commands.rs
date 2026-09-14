@@ -84,6 +84,7 @@ pub async fn analyze_signal(
         )
     };
     let revision = dataset.revision;
+    analyzer::validate_request(&dataset, &request)?;
     let (mut result, updated_cache) = tauri::async_runtime::spawn_blocking(move || {
         analyzer::analyze_dataset(&dataset, &request, cache.as_ref())
     })
@@ -110,7 +111,7 @@ pub async fn suggest_plateau_parameters(
     state: State<'_, AppState>,
     request: SuggestionRequest,
 ) -> Result<ParameterSuggestion, String> {
-    let signal = {
+    let dataset = {
         let session = state
             .session
             .lock()
@@ -118,11 +119,12 @@ pub async fn suggest_plateau_parameters(
         session
             .dataset
             .as_ref()
-            .map(|dataset| dataset.signal.clone())
+            .cloned()
             .ok_or_else(|| "请先加载数据文件。".to_owned())?
     };
+    let (start, end) = analyzer::selected_range(&dataset, request.x_range.as_ref())?;
     tauri::async_runtime::spawn_blocking(move || {
-        analyzer::suggest_plateau_parameters(&signal, &request.preprocess)
+        analyzer::suggest_plateau_parameters(&dataset.signal[start..end], &request.preprocess)
     })
     .await
     .map_err(join_error)
@@ -136,7 +138,7 @@ pub async fn suggest_droplet_parameters(
     state: State<'_, AppState>,
     request: SuggestionRequest,
 ) -> Result<ParameterSuggestion, String> {
-    let signal = {
+    let dataset = {
         let session = state
             .session
             .lock()
@@ -144,11 +146,12 @@ pub async fn suggest_droplet_parameters(
         session
             .dataset
             .as_ref()
-            .map(|dataset| dataset.signal.clone())
+            .cloned()
             .ok_or_else(|| "请先加载数据文件。".to_owned())?
     };
+    let (start, end) = analyzer::selected_range(&dataset, request.x_range.as_ref())?;
     tauri::async_runtime::spawn_blocking(move || {
-        analyzer::suggest_droplet_parameters(&signal, &request.preprocess)
+        analyzer::suggest_droplet_parameters(&dataset.signal[start..end], &request.preprocess)
     })
     .await
     .map_err(join_error)
