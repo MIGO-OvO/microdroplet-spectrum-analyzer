@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ParameterPanel } from "./ParameterPanel";
 import { CalibrationPanel } from "./CalibrationPanel";
-import { DEFAULT_REQUEST } from "../types";
+import { DEFAULT_REQUEST, type AnalysisRequest } from "../types";
 import { SAMPLE_DROPLET_RESULT, SAMPLE_SUMMARY } from "../lib/sample";
 import { LIBRARY_KEY, newCurve } from "../lib/calibration";
 
@@ -12,14 +12,25 @@ const manualRequest = {
   droplet: { ...DEFAULT_REQUEST.droplet, amplitudeBands: { lowMin: -0.01, lowMax: 0.01, highMin: 0.06, highMax: 0.08 } },
 };
 const noOp = () => {};
-function parameters(request = manualRequest) {
+function parameters(request: AnalysisRequest = manualRequest) {
   return renderToStaticMarkup(<ParameterPanel summary={SAMPLE_SUMMARY} request={request}
-    disabled={false} autoRefresh showLabels suggesting={false} onRequestChange={noOp}
-    onChooseFile={noOp} onSuggest={noOp} onAutoRefreshChange={noOp} onShowLabelsChange={noOp} />);
+    disabled={false} autoRefresh showLabels onRequestChange={noOp}
+    onChooseFile={noOp} onAutoRefreshChange={noOp} onShowLabelsChange={noOp} />);
 }
 
 afterEach(() => vi.unstubAllGlobals());
 describe("analysis controls without browser automation", () => {
+  it("shows manual amplitude controls by default without automatic classification controls", () => {
+    const html = parameters(DEFAULT_REQUEST);
+    for (const label of ["高平台幅度下限", "高平台幅度上限", "低平台幅度下限", "低平台幅度上限"]) {
+      expect(html).toContain(label);
+    }
+    for (const label of ["平台识别方式", "自动稳定段分类", "稳定性窗口", "噪声容差倍数", "趋势容差倍数", "两态分离倍数", "自动建议"]) {
+      expect(html).not.toContain(label);
+    }
+    expect(html).toContain('value="51"');
+    expect(html).toContain('value="150"');
+  });
   it("renders separate amplitude windows and labeled inclusive x limits", () => {
     const html = parameters();
     for (const label of ["高平台幅度下限", "高平台幅度上限", "低平台幅度下限", "低平台幅度上限", "横坐标起点", "横坐标终点", "恢复全文件范围"]) {

@@ -88,6 +88,26 @@ describe("processing history records", () => {
     expect(normalized).toEqual(entry);
   });
 
+  it("converts an automatic history run to manual bands without its suggested length cap", () => {
+    const saved = { ...DEFAULT_REQUEST, droplet: { ...DEFAULT_REQUEST.droplet,
+      amplitudeBands: null, minSegmentLength: 150, maxSegmentLength: 194 } };
+    const snapshot = structuredClone(saved);
+    const active = currentAnalysisRequest(saved);
+    expect(active.droplet.amplitudeBands).toEqual(DEFAULT_REQUEST.droplet.amplitudeBands);
+    expect(active.droplet.amplitudeBands).toBeTruthy();
+    expect(active.droplet.minSegmentLength).toBe(150);
+    expect(active.droplet.maxSegmentLength).toBe(0);
+    expect(saved).toEqual(snapshot);
+    expect(currentAnalysisRequest({ ...saved, droplet: { ...saved.droplet, amplitudeBands: undefined } }).droplet)
+      .toEqual(active.droplet);
+    active.droplet.amplitudeBands!.highMin = 0.02;
+    expect(DEFAULT_REQUEST.droplet.amplitudeBands!.highMin).toBe(0.1);
+
+    const manual = { ...saved, droplet: { ...saved.droplet, maxSegmentLength: 900,
+      amplitudeBands: { lowMin: -0.07, lowMax: 0.014, highMin: 0.016, highMax: 0.095 } } };
+    expect(currentAnalysisRequest(manual).droplet).toEqual(manual.droplet);
+  });
+
   it("leaves missing historical length statistics blank and preserves the recorded response definition", () => {
     const old = JSON.parse(JSON.stringify(plateauEntry()));
     delete old.meanLength;

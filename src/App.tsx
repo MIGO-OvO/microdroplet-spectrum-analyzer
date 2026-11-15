@@ -29,7 +29,6 @@ import {
   isTauriRuntime,
   loadDataFile,
   runAnalysis,
-  suggestDropletParameters,
 } from "./lib/bridge";
 import { errorMessage, formatPointCount } from "./lib/format";
 import type { CalibrationLibrary } from "./lib/calibration";
@@ -78,15 +77,6 @@ function completionStatus(result: AnalysisResponse): string {
     : "分析完成，当前参数下未检测到平台。";
 }
 
-async function requestSuggestion(
-  preprocess: AnalysisRequest["preprocess"],
-  xRange?: AnalysisRequest["xRange"],
-) {
-  const suggestion = await suggestDropletParameters(preprocess, xRange);
-  const patch = suggestion.droplet ? { droplet: suggestion.droplet } : null;
-  return { suggestion, patch };
-}
-
 export default function App() {
   const [selection, setSelection] = useState<{ result: AnalysisResponse; number: number; revision: number } | null>(null);
   const desktopRuntime = isTauriRuntime();
@@ -102,7 +92,6 @@ export default function App() {
   const [pendingFile, setPendingFile] = useState<PendingFile | null>(null);
   const [fileBusy, setFileBusy] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [suggesting, setSuggesting] = useState(false);
   const [exporting, setExporting] = useState<"data" | "chart" | "waveform" | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
@@ -284,13 +273,7 @@ export default function App() {
     setError(null);
     try {
       const loaded = await loadDataFile(pendingFile.path, signalColumn, timeColumn);
-      let nextRequest = { ...requestRef.current, xRange: null };
-      try {
-        const { suggestion, patch } = await requestSuggestion(nextRequest.preprocess);
-        if (suggestion.ok && patch && !nextRequest.droplet.amplitudeBands) nextRequest = { ...nextRequest, ...patch };
-      } catch {
-        // A suggestion is a convenience: a failure must never block loading the data.
-      }
+      const nextRequest = { ...requestRef.current, xRange: null };
       await applyDataset(loaded, nextRequest, { path: pendingFile.path, signalColumn, timeColumn });
     } catch (loadError) {
       const message = errorMessage(loadError);
@@ -298,28 +281,6 @@ export default function App() {
       setStatus("数据加载失败，请重新选择文件和列。");
     } finally {
       setFileBusy(false);
-    }
-  };
-
-  const handleSuggest = async () => {
-    if (!desktopRuntime || !summary) return;
-    setSuggesting(true);
-    setError(null);
-    try {
-      const { suggestion, patch } = await requestSuggestion(
-        requestRef.current.preprocess,
-        requestRef.current.xRange,
-      );
-      setStatus(suggestion.message);
-      if (suggestion.ok && patch) {
-        setRequest((current) => ({ ...current, ...patch }));
-      }
-    } catch (suggestionError) {
-      const message = errorMessage(suggestionError);
-      setError(message);
-      setStatus("无法根据当前数据生成参数建议。");
-    } finally {
-      setSuggesting(false);
     }
   };
 
@@ -552,15 +513,12 @@ export default function App() {
         <div className="workspace-grid">
           <ParameterPanel
             summary={summary}
-            result={result}
             request={request}
             disabled={!desktopRuntime || fileBusy}
             autoRefresh={autoRefresh}
             showLabels={showLabels}
-            suggesting={suggesting}
             onRequestChange={handleRequestChange}
             onChooseFile={() => void handleChooseFile()}
-            onSuggest={() => void handleSuggest()}
             onAutoRefreshChange={(enabled) => { if (!enabled) queued.current = null; setAutoRefresh(enabled); }}
             onShowLabelsChange={setShowLabels}
           />

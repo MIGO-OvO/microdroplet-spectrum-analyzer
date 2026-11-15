@@ -6,8 +6,6 @@ import type {
   AnalysisResponse,
   DatasetSummary,
   FileInspection,
-  ParameterSuggestion,
-  PreprocessParams,
   PlotSeries,
 } from "../types";
 
@@ -39,15 +37,6 @@ export function loadDataFile(
 
 export function runAnalysis(request: AnalysisRequest): Promise<AnalysisResponse> {
   return invoke<AnalysisResponse>("analyze_signal", { request });
-}
-
-export function suggestDropletParameters(
-  preprocess: PreprocessParams,
-  xRange?: AnalysisRequest["xRange"],
-): Promise<ParameterSuggestion> {
-  return invoke<ParameterSuggestion>("suggest_droplet_parameters", {
-    request: { preprocess, xRange },
-  });
 }
 
 function safeStem(fileName: string) {

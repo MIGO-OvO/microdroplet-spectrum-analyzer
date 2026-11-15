@@ -797,6 +797,7 @@ mod tests {
                 ..PreprocessParams::default()
             },
             droplet: DropletParams {
+                amplitude_bands: None,
                 stability_window: 5,
                 min_segment_length: 3,
                 ..DropletParams::default()

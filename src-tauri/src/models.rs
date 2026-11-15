@@ -35,7 +35,7 @@ impl Default for PreprocessParams {
         Self {
             filter_mode: FilterMode::ClipSmooth,
             median_window: 5,
-            smooth_window: 11,
+            smooth_window: 51,
             smooth_order: 3,
             clipping_percentile: 98.0,
             manual_baseline: 0.0,
@@ -106,8 +106,13 @@ pub struct DropletParams {
 impl Default for DropletParams {
     fn default() -> Self {
         Self {
-            amplitude_bands: None,
-            min_segment_length: 8,
+            amplitude_bands: Some(AmplitudeBands {
+                low_min: -0.07,
+                low_max: 0.01,
+                high_min: 0.1,
+                high_max: 0.5,
+            }),
+            min_segment_length: 150,
             max_segment_length: 0,
             stability_window: 15,
             edge_trim_fraction: 0.08,

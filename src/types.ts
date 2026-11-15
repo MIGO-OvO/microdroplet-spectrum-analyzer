@@ -194,19 +194,12 @@ export interface AnalysisResponse {
   warnings: string[];
 }
 
-export interface ParameterSuggestion {
-  ok: boolean;
-  message: string;
-  plateau: PlateauParams | null;
-  droplet: DropletParams | null;
-}
-
 export const DEFAULT_REQUEST: AnalysisRequest = {
   mode: "droplet",
   preprocess: {
     filterMode: "clip_smooth",
     medianWindow: 5,
-    smoothWindow: 11,
+    smoothWindow: 51,
     smoothOrder: 3,
     clippingPercentile: 98,
     manualBaseline: 0,
@@ -219,7 +212,8 @@ export const DEFAULT_REQUEST: AnalysisRequest = {
     deviationThreshold: 20,
   },
   droplet: {
-    minSegmentLength: 8,
+    amplitudeBands: { lowMin: -0.07, lowMax: 0.01, highMin: 0.1, highMax: 0.5 },
+    minSegmentLength: 150,
     maxSegmentLength: 0,
     stabilityWindow: 15,
     edgeTrimFraction: 0.08,
@@ -237,11 +231,16 @@ export const DEFAULT_REQUEST: AnalysisRequest = {
 /** Restore parameters for a new run without changing the saved record or curve. */
 export function currentAnalysisRequest(saved: AnalysisRequest): AnalysisRequest {
   const request = structuredClone(saved);
+  const droplet = { ...structuredClone(DEFAULT_REQUEST.droplet), ...request.droplet };
+  if (!request.droplet?.amplitudeBands) {
+    droplet.amplitudeBands = structuredClone(DEFAULT_REQUEST.droplet.amplitudeBands);
+    droplet.maxSegmentLength = 0;
+  }
   return {
     ...request,
     mode: "droplet",
     preprocess: { ...DEFAULT_REQUEST.preprocess, ...request.preprocess },
     plateau: { ...DEFAULT_REQUEST.plateau, ...request.plateau },
-    droplet: { ...DEFAULT_REQUEST.droplet, ...request.droplet },
+    droplet,
   };
 }

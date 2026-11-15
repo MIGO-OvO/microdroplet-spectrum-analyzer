@@ -318,6 +318,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn default_manual_detection_keeps_platforms_longer_than_194_samples() {
+        use crate::models::SegmentKind;
+        let request = AnalysisRequest::default();
+        assert_eq!(request.preprocess.smooth_window, 51);
+        assert_eq!(request.droplet.min_segment_length, 150);
+        assert_eq!(request.droplet.max_segment_length, 0);
+        assert!(request.droplet.amplitude_bands.is_some());
+        let signal = [(0.0, 300), (0.3, 350), (0.0, 300), (0.3, 350), (0.0, 300)]
+            .into_iter()
+            .flat_map(|(level, length)| std::iter::repeat_n(level, length))
+            .collect();
+        let (result, _) = analyze_dataset(&dataset(signal), &request, None);
+        let highs: Vec<_> = result
+            .stable_segments
+            .iter()
+            .filter(|segment| segment.kind == SegmentKind::Platform)
+            .collect();
+        assert_eq!(highs.len(), 2);
+        assert!(highs.iter().all(|segment| segment.length > 194));
+        assert_eq!(result.droplet_measurements.len(), 2);
+    }
+
+    #[test]
     fn manual_bands_and_x_range_are_honored() {
         // A slowly sloping two-level signal followed by a large environmental offset.
         let data = dataset(
@@ -330,6 +353,8 @@ mod tests {
         );
         let mut payload = serde_json::to_value(AnalysisRequest::default()).unwrap();
         payload["mode"] = "droplet".into();
+        payload["preprocess"]["smoothWindow"] = 11.into();
+        payload["droplet"]["minSegmentLength"] = 8.into();
         payload["xRange"] = serde_json::json!({"min":100.0,"max":599.0});
         payload["droplet"]["amplitudeBands"] = serde_json::json!({
             "lowMin":0.0,"lowMax":0.01,"highMin":0.06,"highMax":0.08
@@ -366,11 +391,19 @@ mod tests {
                 min: Some(100.0),
                 max: Some(599.0),
             }),
+            droplet: crate::models::DropletParams {
+                min_segment_length: 8,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let (result, cache) = analyze_dataset(&data, &request, None);
         let isolated = dataset(data.signal[100..600].to_vec());
-        let (reference, _) = analyze_dataset(&isolated, &AnalysisRequest::default(), None);
+        let isolated_request = AnalysisRequest {
+            x_range: None,
+            ..request.clone()
+        };
+        let (reference, _) = analyze_dataset(&isolated, &isolated_request, None);
         assert_eq!(result.processed, reference.processed);
         assert_eq!(
             result.droplet_statistics.mean_corrected_signal,
@@ -475,6 +508,7 @@ mod tests {
                     high_max: 0.08,
                 }),
                 allow_single_sided_reference: false,
+                min_segment_length: 8,
                 ..Default::default()
             },
             ..Default::default()
@@ -597,7 +631,7 @@ mod tests {
     #[test]
     fn legacy_requests_run_the_current_engine_without_rewriting_saved_parameters() {
         let mut signal = vec![0.0; 200];
-        signal.extend(vec![0.3; 100]);
+        signal.extend(vec![0.3; 300]);
         signal.extend(vec![0.0; 200]);
         let data = dataset(signal);
 

@@ -1208,7 +1208,11 @@ pub fn suggest_droplet_parameters(
     signal: &[f64],
     preprocess: &PreprocessParams,
 ) -> ParameterSuggestion {
-    let defaults = DropletParams::default();
+    let defaults = DropletParams {
+        amplitude_bands: None,
+        min_segment_length: 8,
+        ..DropletParams::default()
+    };
     let detection = build_detection_signal(signal, preprocess, &defaults);
     if detection.values.len() < 40 {
         return ParameterSuggestion {
@@ -1308,6 +1312,14 @@ mod tests {
     const BOTTOM: f64 = 0.0006169;
     const DELTA: f64 = PLATFORM - BOTTOM;
 
+    fn automatic_params() -> DropletParams {
+        DropletParams {
+            amplitude_bands: None,
+            min_segment_length: 8,
+            ..DropletParams::default()
+        }
+    }
+
     /// Deterministic pseudo-noise. Identical on every machine and every run, so the
     /// tolerances below are stable without pulling in a random-number dependency.
     fn pseudo_noise(index: usize, amplitude: f64) -> f64 {
@@ -1346,7 +1358,7 @@ mod tests {
             stability_window: 5,
             min_segment_length: 3,
             edge_trim_fraction: 0.0,
-            ..DropletParams::default()
+            ..automatic_params()
         }
     }
 
@@ -1355,6 +1367,7 @@ mod tests {
             mode: AnalysisMode::Droplet,
             preprocess: PreprocessParams {
                 clipping_percentile: 100.0,
+                smooth_window: 11,
                 ..PreprocessParams::default()
             },
             droplet,
@@ -1373,7 +1386,7 @@ mod tests {
     }
 
     fn analyze(signal: Vec<f64>) -> DropletAnalysis {
-        analyze_with(signal, DropletParams::default())
+        analyze_with(signal, automatic_params())
     }
 
     /// Lower-state mean over a record: the naive single global reference a user would
@@ -1496,7 +1509,7 @@ mod tests {
     #[test]
     fn manual_baseline_changes_detection_but_not_the_corrected_signal() {
         let signal = repeating_waveform(3, 140, 70, 0.0012);
-        let mut request = droplet_request(DropletParams::default());
+        let mut request = droplet_request(automatic_params());
         let (plain, _) = analyze_dataset(&dataset(signal.clone()), &request, None);
 
         request.preprocess.manual_baseline = 0.75;
@@ -1840,7 +1853,7 @@ mod tests {
             signal,
             DropletParams {
                 allow_single_sided_reference: false,
-                ..DropletParams::default()
+                ..automatic_params()
             },
         );
         assert_eq!(analysis.measurements.len(), 1);
@@ -1944,7 +1957,7 @@ mod tests {
         let time: Vec<f64> = (0..signal.len())
             .map(|index| index as f64 + (index * index) as f64 / 4000.0)
             .collect();
-        let request = droplet_request(DropletParams::default());
+        let request = droplet_request(automatic_params());
         let (result, _) = analyze_dataset(&dataset_with_time(signal, time), &request, None);
         assert_eq!(result.droplet_measurements.len(), 1);
         let measurement = &result.droplet_measurements[0];
@@ -1983,7 +1996,7 @@ mod tests {
     fn a_degenerate_time_axis_falls_back_to_indices_without_dividing_by_zero() {
         let signal = sections_waveform(&[(BOTTOM, 120), (PLATFORM, 90), (BOTTOM, 120)], 0.0012);
         let flat_time = vec![5.0; signal.len()];
-        let request = droplet_request(DropletParams::default());
+        let request = droplet_request(automatic_params());
         let (result, _) = analyze_dataset(&dataset_with_time(signal, flat_time), &request, None);
         assert_eq!(result.droplet_measurements.len(), 1);
         let measurement = &result.droplet_measurements[0];
@@ -2063,7 +2076,7 @@ mod tests {
     #[test]
     fn droplet_detection_cache_is_reused_unless_the_detection_signal_changes() {
         let signal = repeating_waveform(3, 140, 70, 0.0012);
-        let request = droplet_request(DropletParams::default());
+        let request = droplet_request(automatic_params());
         let (_, cache) = analyze_dataset(&dataset(signal.clone()), &request, None);
         assert_eq!(
             cache.detection,
@@ -2114,7 +2127,11 @@ mod tests {
     #[test]
     fn droplet_suggestion_derives_parameters_or_refuses_explicitly() {
         let signal = repeating_waveform(4, 140, 70, 0.0012);
-        let suggestion = suggest_droplet_parameters(&signal, &PreprocessParams::default());
+        let preprocess = PreprocessParams {
+            smooth_window: 11,
+            ..Default::default()
+        };
+        let suggestion = suggest_droplet_parameters(&signal, &preprocess);
         assert!(suggestion.ok, "{}", suggestion.message);
         let params = suggestion.droplet.expect("droplet params");
         assert!(params.min_segment_length >= 4);
@@ -2335,7 +2352,7 @@ mod tests {
                     })
                     .collect(),
             );
-            let request = droplet_request(DropletParams::default());
+            let request = droplet_request(automatic_params());
             let start = std::time::Instant::now();
             let (result, cache) = analyze_dataset(&data, &request, None);
             let first = start.elapsed();

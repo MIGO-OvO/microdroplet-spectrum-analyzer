@@ -3,12 +3,11 @@ import {
   FileSpreadsheet,
   FolderOpen,
   SlidersHorizontal,
-  Sparkles,
   Waves,
 } from "lucide-react";
 
 import { formatPointCount } from "../lib/format";
-import type { AnalysisRequest, AnalysisResponse, DatasetSummary } from "../types";
+import type { AnalysisRequest, DatasetSummary } from "../types";
 
 interface NumberFieldProps {
   label: string;
@@ -56,30 +55,24 @@ function NumberField({
 
 interface ParameterPanelProps {
   summary: DatasetSummary | null;
-  result?: AnalysisResponse | null;
   request: AnalysisRequest;
   disabled: boolean;
   autoRefresh: boolean;
   showLabels: boolean;
-  suggesting: boolean;
   onRequestChange: (request: AnalysisRequest) => void;
   onChooseFile: () => void;
-  onSuggest: () => void;
   onAutoRefreshChange: (checked: boolean) => void;
   onShowLabelsChange: (checked: boolean) => void;
 }
 
 export function ParameterPanel({
   summary,
-  result,
   request,
   disabled,
   autoRefresh,
   showLabels,
-  suggesting,
   onRequestChange,
   onChooseFile,
-  onSuggest,
   onAutoRefreshChange,
   onShowLabelsChange,
 }: ParameterPanelProps) {
@@ -90,21 +83,6 @@ export function ParameterPanel({
     });
   const updateDroplet = (patch: Partial<AnalysisRequest["droplet"]>) =>
     onRequestChange({ ...request, droplet: { ...request.droplet, ...patch } });
-  const initialBands = () => {
-    const high = result?.dropletStatistics.meanHigh;
-    const low = result?.dropletStatistics.meanBaseline;
-    if (high != null && low != null && high > low) {
-      const padding = (high - low) * 0.3;
-      const baseline = request.preprocess.manualBaseline;
-      return { lowMin: low - baseline - padding, lowMax: low - baseline + padding,
-        highMin: high - baseline - padding, highMax: high - baseline + padding };
-    }
-    const highMin = request.plateau.thresholdLow;
-    const highMax = request.plateau.thresholdHigh;
-    const width = Math.max(Math.abs(highMax - highMin), 0.001);
-    const lowMax = Math.min(0.01, highMin - width * 0.1);
-    return { lowMin: lowMax - width * 0.2, lowMax, highMin, highMax };
-  };
   const bands = request.droplet.amplitudeBands;
 
   return (
@@ -208,12 +186,6 @@ export function ParameterPanel({
             <ChevronDown size={16} aria-hidden="true" />
           </summary>
           <div className="parameter-fields">
-            <label className="field-stack compact"><span>平台识别方式</span>
-              <select disabled={disabled} value={bands ? "manual" : "auto"}
-                onChange={e => updateDroplet({ amplitudeBands: e.target.value === "manual" ? initialBands() : null })}>
-                <option value="manual">手动高低幅度区间</option><option value="auto">自动稳定段分类</option>
-              </select>
-            </label>
             {bands && <>
               <p className="panel-empty-copy">在图中上下拖动边界线或标签，松开后更新参数；也可直接输入。高低区间须保持分离。</p>
               {([["高平台幅度下限", "highMin"], ["高平台幅度上限", "highMax"], ["低平台幅度下限", "lowMin"], ["低平台幅度上限", "lowMax"]] as const).map(([label, key]) =>
@@ -231,16 +203,6 @@ export function ParameterPanel({
               disabled={disabled}
               title="一个稳定区段至少包含的数据点数；过短的平台或多液滴会被忽略。"
               onChange={(minSegmentLength) => updateDroplet({ minSegmentLength })}
-            />
-            <NumberField
-              label="稳定性窗口"
-              value={request.droplet.stabilityWindow}
-              min={3}
-              max={501}
-              step={2}
-              disabled={disabled || !!bands}
-              title="局部稳定性判定的窗口宽度，分析时会归一化为奇数。窗口越大，判定越严格。"
-              onChange={(stabilityWindow) => updateDroplet({ stabilityWindow })}
             />
             <NumberField
               label="边缘裁剪比例"
@@ -268,7 +230,7 @@ export function ParameterPanel({
             </label>
             <details className="parameter-subgroup">
               <summary>
-                高级判定容差
+                高级参数
                 <ChevronDown size={14} aria-hidden="true" />
               </summary>
               <div className="parameter-fields">
@@ -313,36 +275,6 @@ export function ParameterPanel({
                   onChange={(outlierSigma) => updateDroplet({ outlierSigma })}
                 />
                 <NumberField
-                  label="噪声容差倍数"
-                  value={request.droplet.noiseFactor}
-                  min={2}
-                  max={50}
-                  step={0.5}
-                  disabled={disabled || !!bands}
-                  title="局部离散度上限相对检测噪声的倍数。"
-                  onChange={(noiseFactor) => updateDroplet({ noiseFactor })}
-                />
-                <NumberField
-                  label="趋势容差倍数"
-                  value={request.droplet.slopeFactor}
-                  min={1}
-                  max={50}
-                  step={0.5}
-                  disabled={disabled || !!bands}
-                  title="局部半窗中值差上限相对检测噪声的倍数。"
-                  onChange={(slopeFactor) => updateDroplet({ slopeFactor })}
-                />
-                <NumberField
-                  label="两态分离倍数"
-                  value={request.droplet.clusterSeparationFactor}
-                  min={0.5}
-                  max={20}
-                  step={0.5}
-                  disabled={disabled || !!bands}
-                  title="高低两态间距必须超过噪声与簇内离散度的该倍数，否则不判定为双电平。"
-                  onChange={(clusterSeparationFactor) => updateDroplet({ clusterSeparationFactor })}
-                />
-                <NumberField
                   label="参考间隔倍数"
                   value={request.droplet.referenceGapFactor}
                   min={1}
@@ -354,15 +286,6 @@ export function ParameterPanel({
                 />
               </div>
             </details>
-            <button
-              className="button quiet full-width"
-              type="button"
-              onClick={onSuggest}
-              disabled={disabled || !summary || suggesting || !!bands}
-            >
-              <Sparkles size={16} aria-hidden="true" />
-              {suggesting ? "正在计算建议…" : bands ? "自动建议仅用于自动分类" : "自动建议参数"}
-            </button>
           </div>
         </details>
 

@@ -59,11 +59,11 @@ describe("droplet vocabulary labels", () => {
 });
 
 describe("analysis defaults", () => {
-  it("retain the incumbent plateau and preprocessing defaults", () => {
+  it("uses the requested smoothing default and retains legacy plateau parameters", () => {
     expect(DEFAULT_REQUEST.preprocess).toMatchObject({
       filterMode: "clip_smooth",
       medianWindow: 5,
-      smoothWindow: 11,
+      smoothWindow: 51,
       smoothOrder: 3,
       clippingPercentile: 98,
       manualBaseline: 0,
@@ -83,7 +83,8 @@ describe("analysis defaults", () => {
 
   it("expose the droplet defaults the backend normalises against", () => {
     expect(DEFAULT_REQUEST.droplet).toMatchObject({
-      minSegmentLength: 8,
+      amplitudeBands: { lowMin: -0.07, lowMax: 0.01, highMin: 0.1, highMax: 0.5 },
+      minSegmentLength: 150,
       maxSegmentLength: 0,
       stabilityWindow: 15,
       edgeTrimFraction: 0.08,

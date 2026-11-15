@@ -5,7 +5,7 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust)](https://www.rust-lang.org/)
 [![MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-[简体中文](README.zh-CN.md) · [Download v0.1.2](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.2)
+[简体中文](README.zh-CN.md) · [Download v0.1.3](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.3)
 
 ## Overview
 
@@ -26,10 +26,11 @@ Windows 10/11 x64 is the release target. The installer is unsigned; organization
 - CSV, XLS, and XLSX import; first row is the header and the first Excel worksheet is used.
 - Select a signal column and optional nondecreasing numeric time column; invalid rows are skipped as aligned pairs.
 - Symmetric despiking, Savitzky–Golay smoothing and manual baseline subtraction for detection.
-- **Dual-state droplet analysis** (液滴双电平分析): stable-region detection, automatic Platform/Bottom classification,
+- **Dual-state droplet analysis** (液滴双电平分析): manual high/low amplitude windows,
   pairing of every high Platform with neighbouring low Bottoms, local baseline interpolation, and a corrected ΔSignal per high segment.
 - Manual high/low amplitude windows: drag any of the four boundary lines or labels to adjust a limit;
   release to apply, use arrow keys for fine adjustment, or press Escape to cancel a drag.
+- Defaults: smoothing window 51, minimum segment length 150 samples, and no maximum length limit.
 - Wheel/keyboard zoom and drag-to-pan. Adjusting preprocessing preserves both zoomed axes; a new file resets the view.
 - Local zoom requests detailed data from Rust rather than magnifying a fixed global preview.
   Original and processed extrema are preserved in the preview envelope.
@@ -51,16 +52,16 @@ Windows 10/11 x64 is the release target. The installer is unsigned; organization
 ## Dual-platform analysis
 
 **液滴双电平分析 (Dual-state droplet analysis)** supports explicit, non-overlapping high/low amplitude windows
-on the processed signal, as well as the existing automatic classifier. An optional inclusive x range is applied
+on the processed signal. An optional inclusive x range is applied
 before preprocessing; displayed/exported measurements retain the original coordinates. See the
-[manual dual-platform guide](docs/dual-platform-analysis.md). The automatic pipeline is:
+[manual dual-platform guide](docs/dual-platform-analysis.md). The pipeline is:
 
 ```text
 raw signal ─┬─ symmetric despike (Hampel) → Savitzky–Golay → detection signal
-            │        └─ stable-region detection (local spread + local trend, relative to noise)
+            │        └─ consecutive samples in high/low bands + length filtering
             └─ raw interior → median/MAD → robust mean          (the physical level)
 
-  stable regions → automatic Platform/Bottom classification → sequence regularisation
+  high/low regions → Platform/Bottom
                  → high Platform ↔ neighbouring low Bottom pairing → local interpolation
                  → corrected signal  ΔSignal = highLevel − baselineReference
 ```
@@ -75,8 +76,8 @@ Key properties, all covered by Rust regression tests:
   nonlinear drift requires experimental validation.
 - **One-sided references are allowed but marked.** Boundary high segments may have only one low neighbour; these
   results are still produced (unless disabled) but carry `singleSidedReference` and score lower confidence.
-- **Unclassifiable data produces a warning, not droplets.** When the two levels cannot be separated, the run
-  reports `无法可靠分成高／低两个状态` and returns no measurements instead of forcing two clusters.
+- **Missing references produce a warning.** When the selected bands yield no pairable high/low platforms,
+  the run asks the user to review the amplitude and length settings.
 - **Quality flags are machine-readable.** `DropletMeasurement.qualityFlags` is a list of enum values
   (`lowClassificationConfidence`, `singleSidedReference`, `largeReferenceGap`, `noisyBottom`, `noisyPlatform`,
   `nearbyUnknownSegment`, `indexTimeFallback`), shown in the table, the chart tooltip, and the Excel export.
@@ -91,12 +92,13 @@ the current definition, so reanalyze standards when building a curve.
 
 Dual-platform detection is the only analysis engine. Legacy plateau parameters and saved calibration curves
 remain readable; reloading an old history entry runs the current engine without changing the saved response.
-Automatic parameter suggestions return `ok: false` when the data does not show two separable levels.
+Loading another file keeps detection settings and clears the analysis x range. Reusing an old automatic
+history entry selects manual bands and removes its automatically suggested maximum length; saved records remain intact.
 
 ## Usage and limitations
 
 1. Load a file and select its signal/time columns.
-2. Choose automatic classification or manual high/low amplitude windows.
+2. Set the high/low amplitude windows and optional analysis x range.
 3. Adjust smoothing and detection parameters, or drag the chart's amplitude limits. If automatic refresh is disabled, choose **运行分析**.
 4. Zoom into a feature, compare raw and processed values, and export after the result is synchronized.
 
@@ -183,7 +185,13 @@ Share only anonymized or synthetic data you are authorized to publish. Contribut
 Built with Tauri, React, Vite, Lucide, calamine, csv, rust_xlsxwriter, and Plotters.
 The prior Python application is preserved in Git history.
 
-## v0.1.2
+## v0.1.3
+
+Uses manual amplitude windows with smoothing 51, minimum length 150 and unlimited maximum length by default.
+Removes automatic classification controls and stops file loading from overwriting detection settings.
+See [release notes](docs/release-v0.1.3.md).
+
+### v0.1.2
 
 Adds full-resolution processed-waveform CSV, working-curve concentrations in processing history, and high-platform
 length statistics. Includes the local history workspace, draggable high/low amplitude limits, and the unified dual-platform
