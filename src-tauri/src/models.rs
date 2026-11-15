@@ -2,15 +2,12 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-/// Analysis pipeline selected by the user.
-///
-/// `Plateau` keeps the legacy "continuous region inside an amplitude window"
-/// detector. `Droplet` supports explicit high/low windows or automatic stable-segment classification.
+/// Stored analysis identity. Plateau is accepted for older records; new runs use Droplet.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum AnalysisMode {
-    #[default]
     Plateau,
+    #[default]
     Droplet,
 }
 
@@ -149,6 +146,7 @@ pub struct AnalysisRequest {
     pub x_range: Option<XRange>,
     pub mode: AnalysisMode,
     pub preprocess: PreprocessParams,
+    #[serde(default)]
     pub plateau: PlateauParams,
     /// `serde(default)` keeps older payloads working after the droplet mode landed.
     #[serde(default)]
@@ -215,7 +213,7 @@ pub enum SegmentKind {
     Unknown,
     /// Upper stable state of the dual-state model.
     Platform,
-    /// Lower stable state of the dual-state model; the core of one droplet.
+    /// Lower stable state, used as the baseline reference.
     Bottom,
 }
 
@@ -230,18 +228,18 @@ impl SegmentKind {
     }
 }
 
-/// How `platform_reference` was obtained for one droplet.
+/// How `baseline_reference` was obtained for one droplet.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ReferenceMode {
-    /// Left and right Platform were both available and linearly interpolated.
+    /// Left and right low segments were available and linearly interpolated.
     #[default]
     Interpolated,
-    /// Only a left Platform was in range; its level was used directly.
+    /// Only a left low segment was in range; its level was used directly.
     LeftOnly,
-    /// Only a right Platform was in range; its level was used directly.
+    /// Only a right low segment was in range; its level was used directly.
     RightOnly,
-    /// No usable Platform; no corrected signal was produced.
+    /// No usable low segment; no corrected signal was produced.
     None,
 }
 
@@ -264,13 +262,13 @@ impl ReferenceMode {
 pub enum QualityFlag {
     /// The segment level sat too far from either state centre to be trusted.
     LowClassificationConfidence,
-    /// `platform_reference` came from a single Platform instead of interpolation.
+    /// `baseline_reference` came from a single low segment instead of interpolation.
     SingleSidedReference,
-    /// A paired Platform was further away than the typical segment spacing.
+    /// A paired low segment was further away than the typical segment spacing.
     LargeReferenceGap,
-    /// The Bottom interior was noisier than the global robust noise estimate.
+    /// A low reference interior was noisier than the global robust noise estimate.
     NoisyBottom,
-    /// At least one paired Platform interior was noisier than the global estimate.
+    /// The measured high segment was noisier than the global estimate.
     NoisyPlatform,
     /// An unrecognised stable segment sits inside the reference span.
     NearbyUnknownSegment,
@@ -325,18 +323,18 @@ pub struct StableSegment {
 #[serde(rename_all = "camelCase")]
 pub struct DropletMeasurement {
     pub number: usize,
-    /// 1-based number of the Bottom segment that produced this droplet.
-    pub bottom_segment: usize,
-    pub left_platform_segment: Option<usize>,
-    pub right_platform_segment: Option<usize>,
+    /// 1-based number of the high (Platform) segment that produced this droplet.
+    pub high_segment: usize,
+    pub left_low_segment: Option<usize>,
+    pub right_low_segment: Option<usize>,
     pub center_index: usize,
     pub center: f64,
-    pub bottom_level: f64,
-    pub left_platform_level: Option<f64>,
-    pub right_platform_level: Option<f64>,
-    /// Locally interpolated Platform level at the Bottom's x position.
-    pub platform_reference: f64,
-    /// `platform_reference - bottom_level`, the requested delta signal.
+    pub high_level: f64,
+    pub left_low_level: Option<f64>,
+    pub right_low_level: Option<f64>,
+    /// Locally interpolated low baseline at the high segment's x position.
+    pub baseline_reference: f64,
+    /// `high_level - baseline_reference`, the requested delta signal.
     pub corrected_signal: f64,
     pub reference_mode: ReferenceMode,
     pub confidence: f64,
@@ -352,8 +350,15 @@ pub struct DropletStatistics {
     pub max_corrected_signal: Option<f64>,
     pub standard_deviation: Option<f64>,
     pub rsd: Option<f64>,
-    pub mean_bottom: Option<f64>,
-    pub mean_platform_reference: Option<f64>,
+    pub mean_high: Option<f64>,
+    pub mean_baseline: Option<f64>,
+    /// Full detected high-platform lengths in samples, including unpaired highs.
+    #[serde(default)]
+    pub mean_length: Option<f64>,
+    #[serde(default)]
+    pub length_standard_deviation: Option<f64>,
+    #[serde(default)]
+    pub length_rsd: Option<f64>,
     pub interpolated_count: usize,
     pub single_sided_count: usize,
     pub low_confidence_count: usize,
@@ -363,11 +368,9 @@ pub struct DropletStatistics {
 
 /// Identifies which detection pipeline produced a cached preprocessed signal.
 ///
-/// The cache key must contain every parameter that can change the detection
-/// signal, otherwise a droplet run could silently reuse a plateau signal.
+/// Parameters that change the detection signal and invalidate its cache.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DetectionKey {
-    Plateau,
     Droplet {
         despike_window: usize,
         despike_sigma: f64,
@@ -471,7 +474,7 @@ pub struct FullAnalysisResult {
     pub has_real_time: bool,
     pub x: Arc<Vec<f64>>,
     pub original: Arc<Vec<f64>>,
-    /// Plateau mode: the legacy preprocessed signal. Droplet mode: the detection signal.
+    /// Detection signal; physical levels are measured on the original signal.
     pub processed: Arc<Vec<f64>>,
     pub plateau_features: Vec<PlateauFeature>,
     pub statistics: AnalysisStatistics,

@@ -77,8 +77,8 @@ describe("analysis defaults", () => {
     });
   });
 
-  it("default to plateau mode so existing behaviour is unchanged", () => {
-    expect(DEFAULT_REQUEST.mode).toBe("plateau");
+  it("defaults new analyses to the dual-platform engine", () => {
+    expect(DEFAULT_REQUEST.mode).toBe("droplet");
   });
 
   it("expose the droplet defaults the backend normalises against", () => {
@@ -114,11 +114,11 @@ describe("droplet preview payload", () => {
     expect(result.statistics.featureCount).toBe(0);
   });
 
-  it("keeps the corrected signal equal to reference minus bottom", () => {
+  it("keeps the corrected signal equal to high minus low baseline", () => {
     expect(result.dropletMeasurements.length).toBeGreaterThan(0);
     for (const measurement of result.dropletMeasurements) {
       expect(measurement.correctedSignal).toBeCloseTo(
-        measurement.platformReference - measurement.bottomLevel,
+        measurement.highLevel - measurement.baselineReference,
         12,
       );
     }
@@ -127,26 +127,29 @@ describe("droplet preview payload", () => {
   it("only claims interpolation when both neighbours exist", () => {
     for (const measurement of result.dropletMeasurements) {
       if (measurement.referenceMode === "interpolated") {
-        expect(measurement.leftPlatformSegment).not.toBeNull();
-        expect(measurement.rightPlatformSegment).not.toBeNull();
+        expect(measurement.leftLowSegment).not.toBeNull();
+        expect(measurement.rightLowSegment).not.toBeNull();
         expect(measurement.qualityFlags).not.toContain("singleSidedReference");
       } else {
         expect(
-          measurement.leftPlatformSegment === null || measurement.rightPlatformSegment === null,
+          measurement.leftLowSegment === null || measurement.rightLowSegment === null,
         ).toBe(true);
         expect(measurement.qualityFlags).toContain("singleSidedReference");
       }
     }
   });
 
-  it("points every measurement at a real Bottom segment", () => {
+  it("points every measurement at a high segment and low references", () => {
     const bottoms = new Set(
       result.stableSegments
-        .filter((segment) => segment.kind === "bottom")
+        .filter((segment) => segment.kind === "platform")
         .map((segment) => segment.number),
     );
     for (const measurement of result.dropletMeasurements) {
-      expect(bottoms.has(measurement.bottomSegment)).toBe(true);
+      expect(bottoms.has(measurement.highSegment)).toBe(true);
+      for (const id of [measurement.leftLowSegment, measurement.rightLowSegment]) {
+        if (id != null) expect(result.stableSegments.find(s => s.number === id)?.kind).toBe("bottom");
+      }
     }
     expect(result.dropletStatistics.dropletCount).toBe(result.dropletMeasurements.length);
     expect(result.dropletStatistics.interpolatedCount).toBe(

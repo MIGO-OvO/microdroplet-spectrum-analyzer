@@ -1,12 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { isTauriRuntime } from "./bridge";
-import { WEIGHT_LABELS, type CalibrationCurve, type CalibrationFit } from "./calibration";
+import { WEIGHT_LABELS, calibrationDefinition, type CalibrationCurve, type CalibrationFit } from "./calibration";
 
 export type ExportCell = string | number | null;
 export function calibrationTable(curve: CalibrationCurve, fit: CalibrationFit): ExportCell[][] {
   return [
     ["Curve", curve.name], ["Concentration unit", curve.unit], ["Weighting", WEIGHT_LABELS[curve.weighting]],
+    ["Response definition", calibrationDefinition(curve)],
     ["Model", "response = slope * concentration + intercept"], ["Slope", fit.slope], ["Intercept", fit.intercept],
     ["R2 (weighted for WLS)", fit.r2], ["RMSE sqrt(SSE/n), raw response", fit.rmse],
     ["Residual SD sqrt(SSE/(n-2)), raw response", fit.residualSD],
@@ -25,10 +26,11 @@ export function calibrationTable(curve: CalibrationCurve, fit: CalibrationFit): 
 // Rectangular numeric-first table for Origin: one row per independent measurement,
 // no report preamble to skip during CSV import.
 export function calibrationOriginTable(curve: CalibrationCurve, fit: CalibrationFit): ExportCell[][] {
-  return [["Concentration", "Response", "Normalized weight", "Predicted response", "Residual", "Weighted residual", "Back-calculated concentration", "RD (%)", "Source", "Curve", "Unit", "Weighting", "Slope", "Intercept", "R2 (weighted for WLS)", "RMSE", "Residual SD", "Slope SE", "Slope RSD (%)", "Intercept t", "Intercept p", "Lack of fit F", "Lack of fit p", "Captured at", "Processing parameters", "Captured response", "Additional baseline"],
+  const definition = calibrationDefinition(curve);
+  return [["Concentration", "Response", "Normalized weight", "Predicted response", "Residual", "Weighted residual", "Back-calculated concentration", "RD (%)", "Source", "Curve", "Unit", "Weighting", "Slope", "Intercept", "R2 (weighted for WLS)", "RMSE", "Residual SD", "Slope SE", "Slope RSD (%)", "Intercept t", "Intercept p", "Lack of fit F", "Lack of fit p", "Captured at", "Processing parameters", "Captured response", "Additional baseline", "Response definition"],
     ...fit.rows.map(r => [r.concentration, r.response, r.normalizedWeight, r.predicted, r.residual, r.weightedResidual,
       r.backCalculated, r.rd, r.source, curve.name, curve.unit, curve.weighting, fit.slope, fit.intercept, fit.r2, fit.rmse,
-      fit.residualSD, fit.slopeSE, fit.slopeRsd, fit.interceptT, fit.interceptP, fit.lofF, fit.lofP, r.capturedAt, JSON.stringify(r.parameters), r.capturedResponse, r.baseline])];
+      fit.residualSD, fit.slopeSE, fit.slopeRsd, fit.interceptT, fit.interceptP, fit.lofF, fit.lofP, r.capturedAt, JSON.stringify(r.parameters), r.capturedResponse, r.baseline, definition])];
 }
 export function tableCsv(rows: ExportCell[][]): string {
   return "\ufeff" + rows.map(row => row.map(cell => {

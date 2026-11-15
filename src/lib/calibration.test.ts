@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateConcentration, fitCalibration, newCurve, parseLibrary, restoreCalibrationMemory, LIBRARY_KEY, tPValue, fPValue, type CalibrationCurve } from "./calibration";
 import { calibrationSvg, calibrationTable, calibrationOriginTable, tableCsv } from "./calibration-export";
-import { analysisResponse, correctedResponse } from "./calibration";
+import { analysisResponse, correctedResponse, assertCalibrationCompatible, calibrationDefinition, sampleLookup, responseDefinitionForMode } from "./calibration";
 import { DEFAULT_REQUEST } from "../types";
 import { SAMPLE_DROPLET_RESULT, SAMPLE_RESULT } from "./sample";
 
@@ -11,6 +11,27 @@ function fixture(): CalibrationCurve {
     parameters: null, capturedAt: "2026-09-09T00:00:00Z",
   })) };
 }
+
+describe("response definition migration safety", () => {
+  const legacy = () => ({ ...fixture(), points: fixture().points.map(p => ({ ...p,
+    parameters: { ...DEFAULT_REQUEST, mode: "droplet" as const } })) });
+  it("preserves old responses but refuses to use them with new high-centered measurements", () => {
+    const curve = legacy();
+    const restored = parseLibrary(JSON.stringify({ version: 1, curves: [curve] })).curves[0];
+    expect(restored.points).toEqual(curve.points);
+    expect(calibrationDefinition(restored)).toBe("legacyLowCenteredDelta");
+    expect(() => fitCalibration(restored)).not.toThrow();
+    expect(() => assertCalibrationCompatible(restored, "droplet")).toThrow("旧版低平台中心");
+  });
+  it("accepts new-definition curves and rejects mixed or unknown definitions", () => {
+    const curve = legacy();
+    const current = { ...curve, points: curve.points.map(p => ({ ...p, responseDefinition: "highMinusLowBaselineV1" as const })) };
+    expect(() => assertCalibrationCompatible(current, "droplet")).not.toThrow();
+    expect(() => fitCalibration({ ...current, points: [...current.points, curve.points[0]] })).toThrow("不同响应定义");
+    expect(() => parseLibrary(JSON.stringify({ version: 1, curves: [{ ...curve, points: curve.points.map(p => ({ ...p, responseDefinition: "unknown" })) }] }))).toThrow("标定点数据无效");
+    expect(parseLibrary(JSON.stringify({ version: 1, curves: [current] })).curves[0]).toEqual(current);
+  });
+});
 describe("calibration numerical reference (SciPy 1.x independent cross-check)", () => {
   it("matches OLS coefficients, standard errors and two-sided t p value", () => {
     const f = fitCalibration(fixture());
@@ -71,9 +92,9 @@ describe("calibration guards and persistence", () => {
     const restored = parseLibrary(JSON.stringify({ version: 1, curves: [c] })).curves[0];
     const f = fitCalibration(restored);
     const csv = calibrationOriginTable(restored, f);
-    expect(csv[0].slice(-2)).toEqual(["Captured response", "Additional baseline"]);
+    expect(csv[0].slice(-3)).toEqual(["Captured response", "Additional baseline", "Response definition"]);
     expect(csv[1][1]).toBeCloseTo(0.8);
-    expect(csv[1].slice(-2)).toEqual([1, 0.2]);
+    expect(csv[1].slice(-3)).toEqual([1, 0.2, "plateauHeight"]);
     expect(fitCalibration(fixture()).rows[0].response).toBe(1);
     expect(() => correctedResponse({ response: 1, baseline: Infinity })).toThrow();
     expect(() => parseLibrary(JSON.stringify({ version: 1, curves: [{ ...c, points: [{ ...c.points[0], baseline: "0.2" }] }] }))).toThrow();
@@ -155,5 +176,42 @@ describe("portable scientific exports", () => {
     const origin = calibrationOriginTable(c, fitCalibration(c));
     expect(origin).toHaveLength(7); expect(origin.every(r => r.length === origin[0].length)).toBe(true);
     expect(origin[1][0]).toBe(0); expect(origin[1][7]).toBeNull();
+  });
+});
+describe("quick concentration lookup across analysis modes", () => {
+  const plateauCurve = () => ({ ...fixture(), points: fixture().points.map(p => ({ ...p, parameters: { ...DEFAULT_REQUEST, mode: "plateau" as const } })) });
+  const dropletCurve = () => ({ ...fixture(), points: fixture().points.map(p => ({ ...p,
+    parameters: { ...DEFAULT_REQUEST, mode: "droplet" as const }, responseDefinition: "highMinusLowBaselineV1" as const })) });
+  it("substitutes a sample from the other mode instead of refusing to compute", () => {
+    const lookup = sampleLookup(plateauCurve(), 3, "droplet");
+    expect(lookup.matched).toBe(false);
+    expect(lookup.response).toBe(3);
+    expect(lookup.curveDefinition).toBe("plateauHeight");
+    expect(lookup.sampleDefinition).toBe("highMinusLowBaselineV1");
+    expect(lookup.notices).toHaveLength(1);
+    expect(lookup.notices[0]).toContain("平台平均高度");
+    expect(lookup.notices[0]).toContain("快速参考");
+    // The conversion still happens: no exception, a number, and the same equation.
+    const value = calculateConcentration(fitCalibration(plateauCurve()), lookup.response);
+    expect(value.value).toBeCloseTo((3 - 4 / 3) / 2, 12);
+  });
+  it("stays quiet when curve and sample share one response definition", () => {
+    for (const [curve, mode] of [[plateauCurve(), "plateau"], [dropletCurve(), "droplet"]] as const) {
+      const lookup = sampleLookup(curve, 2, mode);
+      expect(lookup.matched).toBe(true);
+      expect(lookup.notices).toEqual([]);
+    }
+    expect(responseDefinitionForMode("plateau")).toBe("plateauHeight");
+    expect(responseDefinitionForMode("droplet")).toBe("highMinusLowBaselineV1");
+  });
+  it("flags a curve built from the retired low-centered Δ", () => {
+    const legacy = { ...dropletCurve(), points: dropletCurve().points.map(p => ({ ...p, responseDefinition: undefined })) };
+    const lookup = sampleLookup(legacy, 2, "droplet");
+    expect(lookup.matched).toBe(false);
+    expect(lookup.curveDefinition).toBe("legacyLowCenteredDelta");
+    expect(lookup.notices[0]).toContain("旧版低平台中心 Δ");
+  });
+  it("rejects a response that no analysis produced", () => {
+    expect(() => sampleLookup(plateauCurve(), Number.NaN, "plateau")).toThrow("没有可用的平均响应");
   });
 });

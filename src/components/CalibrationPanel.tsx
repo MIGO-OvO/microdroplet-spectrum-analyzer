@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Save, FolderOpen, Download } from "lucide-react";
 import type { AnalysisRequest, AnalysisResponse, DatasetSummary } from "../types";
-import { analysisResponse, calibrationMode, correctedResponse, calculateConcentration, fitCalibration, LIBRARY_KEY, newCurve, parseLibrary, restoreCalibrationMemory, WEIGHT_LABELS,
+import { analysisResponse, assertCalibrationCompatible, calibrationDefinition, correctedResponse, calculateConcentration, fitCalibration, LIBRARY_KEY, newCurve, parseLibrary, restoreCalibrationMemory, sampleLookup, WEIGHT_LABELS,
   type CalibrationCurve, type CalibrationLibrary, type Weighting } from "../lib/calibration";
 import { calibrationSvg, calibrationTable, calibrationOriginTable, openCalibrationLibrary, saveCalibrationArtifact,
-  scientificNumber as fmt, svgPng, tableCsv } from "../lib/calibration-export";
+  scientificNumber as fmt, svgPng, tableCsv, type ExportCell } from "../lib/calibration-export";
 import { errorMessage } from "../lib/format";
+import { CalibrationSample, type SampleOutcome } from "./CalibrationSample";
 
 interface Props {
   active: boolean;
@@ -14,13 +15,17 @@ interface Props {
   request: AnalysisRequest;
   desktop: boolean;
   onOpen: () => void;
+  /** Kept mounted for its draft state, but not shown while another tab is open. */
+  hidden?: boolean;
+  onLibraryChange?: (library: CalibrationLibrary) => void;
 }
 function restore() {
   return restoreCalibrationMemory(key => localStorage.getItem(key));
 }
-export function CalibrationPanel({ active, result, summary, request, desktop, onOpen }: Props) {
+export function CalibrationPanel({ active, result, summary, request, desktop, onOpen, hidden, onLibraryChange }: Props) {
   const [initial] = useState(restore);
   const [library, setLibrary] = useState<CalibrationLibrary>(initial.library);
+  useEffect(() => { onLibraryChange?.(library); }, [library, onLibraryChange]);
   const [draft, setDraft] = useState<CalibrationCurve>(initial.draft);
   const [selected, setSelected] = useState("");
   const [concentration, setConcentration] = useState("");
@@ -38,14 +43,18 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
   }, [draft]);
   const fit = fitState.fit;
   const savedCurve = library.curves.find(c => c.id === selected);
-  const conversion = useMemo(() => {
-    if (!savedCurve || currentResponse == null || !result) return null;
+  const conversion = useMemo<SampleOutcome | null>(() => {
+    if (!savedCurve) return null;
+    const empty: SampleOutcome = { value: null, extrapolated: false, error: "", notices: [], matched: true, curveDefinition: null, sampleDefinition: null };
+    if (!result) return { ...empty, error: "等待有效的分析结果" };
+    if (currentResponse == null) return { ...empty, error: "当前分析没有得到可用的平均响应" };
     try {
-      if (calibrationMode(savedCurve) !== result.mode) throw new Error("当前分析模式与曲线不一致，请选择相同响应类型的曲线。");
-      const baseline = sampleBaseline.trim() ? Number(sampleBaseline) : NaN;
-      return { ...calculateConcentration(fitCalibration(savedCurve), correctedResponse({ response: currentResponse, baseline })), error: "" };
+      const baseline = sampleBaseline.trim() === "" ? 0 : Number(sampleBaseline);
+      const lookup = sampleLookup(savedCurve, currentResponse, result.mode);
+      return { ...empty, ...lookup,
+        ...calculateConcentration(fitCalibration(savedCurve), correctedResponse({ response: currentResponse, baseline })), error: "" };
     }
-    catch (e) { return { value: null, extrapolated: false, error: errorMessage(e) }; }
+    catch (e) { return { ...empty, error: errorMessage(e) }; }
   }, [savedCurve, result, currentResponse, sampleBaseline]);
   const savedDraft = library.curves.find(c => c.id === draft.id);
   const unsaved = JSON.stringify(savedDraft) !== JSON.stringify(draft);
@@ -76,13 +85,14 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
     const value = Number(concentration);
     if (!concentration.trim() || !Number.isFinite(value) || value < 0) throw new Error("请输入有效的非负浓度。");
     if (!desktop || !summary || !result || currentResponse == null) throw new Error("请先在桌面应用中完成文件分析。");
-    if (draft.points.length && calibrationMode(draft) !== result.mode) throw new Error("平台高度与双平台差 Δ 不能混用，请新建工作曲线。");
+    assertCalibrationCompatible(draft, result.mode);
     const baseline = captureBaseline.trim() ? Number(captureBaseline) : NaN;
     correctedResponse({ response: currentResponse, baseline });
     if (draft.points.some(p => p.source === summary.fileName)) throw new Error("此文件名已存在。请移除旧点后重新填入，避免把同一文件当作独立重复；独立实验文件请使用不同名称。");
     change({ points: [...draft.points, { id: crypto.randomUUID(), concentration: value,
       response: currentResponse, baseline, weight: 1, source: summary.fileName,
-      capturedAt: new Date().toISOString(), parameters: structuredClone(request) }] });
+      capturedAt: new Date().toISOString(), parameters: structuredClone(request),
+      ...(result.mode === "droplet" ? { responseDefinition: "highMinusLowBaselineV1" as const } : {}) }] });
     setMessage(`已将 ${summary.fileName} 添加为浓度 ${value} 的标定点。`); onOpen();
   }
   const currentAvailable = desktop && currentResponse != null;
@@ -92,21 +102,26 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
     const table = extension === "csv" ? calibrationOriginTable(draft, fit) : calibrationTable(draft, fit);
     if (await saveCalibrationArtifact(draft.name, extension, extension === "csv" ? tableCsv(table) : "", table)) setMessage(`${extension.toUpperCase()} 已导出（当前编辑版本）。`);
   });
-  return <section className={active ? "calibration-panel" : "calibration-strip"} aria-label="工作曲线与浓度计算">
-    {!active ? <div className="calibration-toolbar">
-      <strong>浓度计算</strong>
-      <label>已保存曲线 <select value={selected} onChange={e => setSelected(e.target.value)}><option value="">不使用曲线</option>{library.curves.map(c => <option key={c.id} value={c.id}>{c.name} {c.unit && `(${c.unit})`}</option>)}</select></label>
-      {savedCurve && <label>样品额外基线<input type="number" step="any" value={sampleBaseline} onChange={e => setSampleBaseline(e.target.value)} /></label>}
-      {conversion ? <output>{conversion.error || `浓度：${fmt(conversion.value)} ${savedCurve?.unit ?? ""}${conversion.extrapolated ? " · 超出标定范围（外推）" : ""}`}</output> : <span>{selected ? "等待有效分析结果" : "选择曲线后按当前文件响应反算"}</span>}
-      {savedCurve && <span>y = {(() => { try { const f = fitCalibration(savedCurve); return `${fmt(f.slope)} x + ${fmt(f.intercept)}`; } catch { return "无效方程"; } })()}</span>}
-      {conversion?.value != null && <button className="button secondary" disabled={busy} onClick={() => void task(async () => {
-        const f = fitCalibration(savedCurve!);
-        const rows = [["Source", "Captured response", "Additional baseline", "Response", "Concentration", "Unit", "Curve", "Slope", "Intercept", "Extrapolated", "Curve updated", "Processing parameters"],
-          [summary!.fileName, currentResponse, Number(sampleBaseline), correctedResponse({ response: currentResponse!, baseline: Number(sampleBaseline) }), conversion.value, savedCurve!.unit, savedCurve!.name, f.slope, f.intercept, String(conversion.extrapolated), savedCurve!.updatedAt, JSON.stringify(request)]];
-        if (await saveCalibrationArtifact(`${summary!.fileName}_concentration`, "csv", tableCsv(rows))) setMessage("浓度结果已导出。");
-      })}>导出浓度 CSV</button>}
-      <button className="button secondary" onClick={onOpen}>管理工作曲线</button>
-      {savedCurve && savedCurve.points.some(p => p.parameters === null || JSON.stringify(p.parameters) !== JSON.stringify(request)) && <span>注意：当前处理参数与部分标定点不同或来源参数未知，请确认测量条件可比。</span>}
+  const exportConcentration = () => void task(async () => {
+    if (!savedCurve || conversion?.value == null || !summary || currentResponse == null) return;
+    const equation = fitCalibration(savedCurve);
+    const baseline = sampleBaseline.trim() === "" ? 0 : Number(sampleBaseline);
+    const rows: ExportCell[][] = [
+      ["Source", "Captured response", "Additional baseline", "Response", "Concentration", "Unit", "Curve", "Slope", "Intercept", "Extrapolated", "Curve updated", "Processing parameters", "Curve response definition", "Sample response definition", "Definition matched"],
+      [summary.fileName, currentResponse, baseline, correctedResponse({ response: currentResponse, baseline }), conversion.value, savedCurve.unit,
+        savedCurve.name, equation.slope, equation.intercept, String(conversion.extrapolated), savedCurve.updatedAt, JSON.stringify(request),
+        conversion.curveDefinition ? calibrationDefinition(savedCurve) : "", conversion.sampleDefinition ?? "", String(conversion.matched)],
+    ];
+    if (await saveCalibrationArtifact(`${summary.fileName}_concentration`, "csv", tableCsv(rows))) setMessage("浓度结果已导出。");
+  });
+  const sampleProps = { curves: library.curves, curve: savedCurve, selected, onSelect: setSelected,
+    baseline: sampleBaseline, onBaseline: setSampleBaseline, sampleName: summary?.fileName ?? null,
+    sampleResponse: currentResponse, outcome: conversion, busy, onExport: exportConcentration, onOpen };
+  return <section className={active ? "calibration-panel" : "calibration-strip"} aria-label="工作曲线与浓度计算" hidden={hidden}>
+    {!active ? <div>
+      <CalibrationSample variant="strip" {...sampleProps} />
+      {savedCurve && <p className="calibration-notice">y = {(() => { try { const f = fitCalibration(savedCurve); return `${fmt(f.slope)} x + ${fmt(f.intercept)}`; } catch { return "无效方程"; } })()}
+        {savedCurve.points.some(p => p.parameters === null || JSON.stringify(p.parameters) !== JSON.stringify(request)) && " · 当前处理参数与部分标定点不同或来源参数未知，请确认测量条件可比。"}</p>}
     </div> : <>
       <div className="calibration-toolbar">
         <h2>工作曲线</h2><span>{unsaved ? "草稿 · 未保存到曲线库" : "已保存"}</span>
@@ -131,6 +146,7 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
           setMessage(`已导入 ${copies.length} 条曲线副本，原曲线及当前草稿保持不变。请从列表选择。`);
         })}><FolderOpen size={15}/>导入 JSON</button>
       </div>
+      <CalibrationSample variant="panel" {...sampleProps} />
       <div className="calibration-fields">
         <label>曲线名称<input value={draft.name} maxLength={120} onChange={e => change({ name: e.target.value })}/></label>
         <label>浓度单位<input value={draft.unit} maxLength={40} placeholder="例如 μmol/L" onChange={e => change({ unit: e.target.value })}/></label>
@@ -171,6 +187,7 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
         </div>
         <p className="calibration-notice">残差出现漏斗趋势时，可比较加权拟合；权重应有方差依据（如 1/σ²），不会自动选择。t/F 检验假设独立、正态误差及正确方差模型；加权结果中的斜率 RSD 是参数相对标准误，不是多次建曲线的重复性。零浓度 RD 不定义。</p>
       </>}
+      {draft.points.some(p => p.parameters?.mode === "droplet" && !p.responseDefinition) && <p className="calibration-notice">此草稿含旧版低平台中心 Δ，原始响应保持原样。可用原方程反算浓度，跨响应定义时标注快速参考；采集当前定义的标定点请新建曲线。</p>}
       <div className="calibration-toolbar"><h3>标定点与回算偏差</h3><span>{draft.points.length} 个测量点 · 浓度、额外基线和权重可修改，采集响应保留</span><button className="button secondary" disabled={!fit || busy} onClick={() => void exportData("csv")}><Download size={15}/>CSV</button><button className="button secondary" disabled={!fit || busy || !desktop} onClick={() => void exportData("xlsx")}>Excel</button></div>
       <div className="calibration-table-wrap"><table className="calibration-table"><thead><tr><th>来源文件</th><th>浓度</th><th>采集响应</th><th>额外基线</th><th>拟合响应</th><th>自定义权重</th><th>预测响应</th><th>残差</th><th>回算浓度</th><th>RD (%)</th><th>操作</th></tr></thead><tbody>
         {draft.points.map((point, i) => <tr key={point.id}><td title={`${point.capturedAt}\n${JSON.stringify(point.parameters)}`}>{point.source}</td>

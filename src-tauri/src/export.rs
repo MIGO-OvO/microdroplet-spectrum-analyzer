@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs::File, io::Write, path::Path};
 
 use plotters::coord::Shift;
 use plotters::prelude::*;
@@ -71,7 +71,7 @@ fn set_widths(worksheet: &mut rust_xlsxwriter::Worksheet, widths: &[f64]) -> Res
     Ok(())
 }
 
-/// Final droplet measurements: one row per Bottom, with the exact reference levels
+/// Final droplet measurements: one row per high, with exact low-reference levels
 /// that produced each corrected Δ.
 fn export_droplet_results(
     workbook: &mut Workbook,
@@ -82,14 +82,17 @@ fn export_droplet_results(
     let headers = [
         "液滴 #",
         "中心位置",
-        "Bottom",
-        "左 Platform",
-        "右 Platform",
-        "Platform Reference",
+        "高平台实测值",
+        "左低平台电平",
+        "右低平台电平",
+        "低平台基线（高平台中心）",
         "Corrected ΔSignal",
         "Reference Mode",
-        "Confidence",
+        "规则评分（非准确率）",
         "Quality Flags",
+        "高平台 ID",
+        "左低平台 ID",
+        "右低平台 ID",
     ];
     write_headers(worksheet, &headers)?;
     for (row, measurement) in measurements.iter().enumerate() {
@@ -101,12 +104,12 @@ fn export_droplet_results(
             .write_number(row, 1, measurement.center)
             .map_err(excel_error)?;
         worksheet
-            .write_number(row, 2, measurement.bottom_level)
+            .write_number(row, 2, measurement.high_level)
             .map_err(excel_error)?;
-        write_optional(worksheet, row, 3, measurement.left_platform_level)?;
-        write_optional(worksheet, row, 4, measurement.right_platform_level)?;
+        write_optional(worksheet, row, 3, measurement.left_low_level)?;
+        write_optional(worksheet, row, 4, measurement.right_low_level)?;
         worksheet
-            .write_number(row, 5, measurement.platform_reference)
+            .write_number(row, 5, measurement.baseline_reference)
             .map_err(excel_error)?;
         worksheet
             .write_number(row, 6, measurement.corrected_signal)
@@ -120,10 +123,27 @@ fn export_droplet_results(
         worksheet
             .write_string(row, 9, quality_label(measurement))
             .map_err(excel_error)?;
+        worksheet
+            .write_string(row, 10, format!("H{}", measurement.high_segment))
+            .map_err(excel_error)?;
+        for (column, id) in [
+            (11, measurement.left_low_segment),
+            (12, measurement.right_low_segment),
+        ] {
+            worksheet
+                .write_string(
+                    row,
+                    column,
+                    id.map_or_else(|| MISSING.to_owned(), |n| format!("L{n}")),
+                )
+                .map_err(excel_error)?;
+        }
     }
     set_widths(
         worksheet,
-        &[9.0, 14.0, 16.0, 16.0, 16.0, 20.0, 20.0, 16.0, 12.0, 42.0],
+        &[
+            9.0, 14.0, 18.0, 18.0, 18.0, 30.0, 20.0, 16.0, 25.0, 42.0, 14.0, 14.0, 14.0,
+        ],
     )
 }
 
@@ -146,7 +166,8 @@ fn export_stable_segments(
         "标准差",
         "MAD",
         "斜率",
-        "置信度",
+        "规则评分（非准确率）",
+        "区段 ID",
     ];
     write_headers(worksheet, &headers)?;
     for (row, segment) in segments.iter().enumerate() {
@@ -187,6 +208,14 @@ fn export_stable_segments(
         worksheet
             .write_number(row, 11, segment.confidence)
             .map_err(excel_error)?;
+        let prefix = match segment.kind {
+            SegmentKind::Platform => "H",
+            SegmentKind::Bottom => "L",
+            SegmentKind::Unknown => "U",
+        };
+        worksheet
+            .write_string(row, 12, format!("{prefix}{}", segment.number))
+            .map_err(excel_error)?;
     }
     set_widths(
         worksheet,
@@ -194,6 +223,44 @@ fn export_stable_segments(
             8.0, 12.0, 12.0, 14.0, 12.0, 18.0, 9.0, 10.0, 14.0, 14.0, 13.0, 11.0,
         ],
     )
+}
+
+/// Export every sample from the analysis snapshot, before display decimation.
+pub fn export_waveform(result: &FullAnalysisResult, path: &str) -> Result<(), String> {
+    if !Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("csv"))
+    {
+        return Err("波形数据请保存为 .csv 文件。".into());
+    }
+    let csv_error = |error: csv::Error| format!("无法写入波形 CSV：{error}");
+    let mut file = File::create(path).map_err(|error| format!("无法创建波形 CSV：{error}"))?;
+    file.write_all(b"\xEF\xBB\xBF")
+        .map_err(|error| format!("无法写入波形 CSV：{error}"))?;
+    let mut writer = csv::Writer::from_writer(file);
+    writer
+        .write_record([
+            if result.has_real_time {
+                "time"
+            } else {
+                "sample_index"
+            },
+            "original_signal",
+            "processed_signal",
+        ])
+        .map_err(csv_error)?;
+    for index in 0..result.x.len() {
+        writer
+            .serialize((
+                result.x[index],
+                result.original[index],
+                result.processed[index],
+            ))
+            .map_err(csv_error)?;
+    }
+    writer
+        .flush()
+        .map_err(|error| format!("无法写入波形 CSV：{error}"))
 }
 
 pub fn export_results(result: &FullAnalysisResult, path: &str) -> Result<(), String> {
@@ -242,6 +309,46 @@ pub fn export_results(result: &FullAnalysisResult, path: &str) -> Result<(), Str
         }
     }
 
+    let statistics = workbook.add_worksheet();
+    statistics.set_name("Statistics").map_err(excel_error)?;
+    write_headers(statistics, &["统计量", "数值"])?;
+    let length_mean = match result.request.mode {
+        AnalysisMode::Droplet => result.droplet_statistics.mean_length,
+        AnalysisMode::Plateau => result.statistics.mean_length,
+    };
+    let length_sd = match result.request.mode {
+        AnalysisMode::Droplet => result.droplet_statistics.length_standard_deviation,
+        AnalysisMode::Plateau => result.statistics.length_standard_deviation,
+    };
+    let length_rsd = length_mean
+        .filter(|average| *average > 0.0)
+        .zip(length_sd)
+        .map(|(average, deviation)| deviation / average * 100.0);
+    for (index, (label, value)) in [
+        ("平均高平台长度（点）", length_mean),
+        ("高平台长度标准差（点，总体）", length_sd),
+        ("高平台长度 RSD (%)", length_rsd),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        statistics
+            .write_string(index as u32 + 1, 0, label)
+            .map_err(excel_error)?;
+        write_optional(statistics, index as u32 + 1, 1, value)?;
+    }
+    statistics
+        .write_string(4, 0, "统计范围")
+        .map_err(excel_error)?;
+    statistics
+        .write_string(
+            4,
+            1,
+            "全部已分类高平台，含未形成液滴测量的平台；长度为检测范围点数",
+        )
+        .map_err(excel_error)?;
+    set_widths(statistics, &[34.0, 78.0])?;
+
     let metadata = workbook.add_worksheet();
     metadata
         .set_name("Analysis Parameters")
@@ -268,6 +375,28 @@ pub fn export_results(result: &FullAnalysisResult, path: &str) -> Result<(), Str
             },
         )
         .map_err(excel_error)?;
+    if result.request.mode == AnalysisMode::Droplet {
+        metadata
+            .write_string(2, 0, "Response definition")
+            .map_err(excel_error)?;
+        metadata
+            .write_string(
+                2,
+                1,
+                "highMinusLowBaselineV1: high raw level - low baseline at high center",
+            )
+            .map_err(excel_error)?;
+        metadata
+            .write_string(3, 0, "Score interpretation")
+            .map_err(excel_error)?;
+        metadata
+            .write_string(
+                3,
+                1,
+                "Heuristic, not accuracy. Manual-band segment score starts at 1.",
+            )
+            .map_err(excel_error)?;
+    }
     workbook.save(path).map_err(excel_error)
 }
 
@@ -431,7 +560,7 @@ where
         }
         AnalysisMode::Droplet => {
             // One marker per stable segment, coloured by the classified state, plus a
-            // Delta-carrying marker at every Bottom that produced a measurement.
+            // Evidence markers for both states, plus high-centered delta lines.
             let platform: Vec<(f64, f64)> = result
                 .stable_segments
                 .iter()
@@ -451,8 +580,8 @@ where
                 .map(|segment| (segment.center, segment.level))
                 .collect();
             for (label, color, points) in [
-                ("Platform", RGBColor(36, 134, 106), platform),
-                ("Bottom", RGBColor(20, 125, 154), bottom),
+                ("High (H)", RGBColor(36, 134, 106), platform),
+                ("Low baseline (L)", RGBColor(20, 125, 154), bottom),
                 ("Unknown", RGBColor(182, 114, 22), unknown),
             ] {
                 if points.is_empty() {
@@ -471,16 +600,24 @@ where
             chart
                 .draw_series(result.droplet_measurements.iter().map(|measurement| {
                     Circle::new(
-                        (measurement.center, measurement.bottom_level),
+                        (measurement.center, measurement.high_level),
                         7,
                         RGBColor(217, 76, 61).stroke_width(2),
                     )
                 }))
                 .map_err(|error| format!("无法绘制液滴标记：{error:?}"))?
-                .label("Droplet Δ")
+                .label("High measurement (H)")
                 .legend(|(x, y)| {
                     Circle::new((x + 12, y), 7, RGBColor(217, 76, 61).stroke_width(2))
                 });
+            chart
+                .draw_series(result.droplet_measurements.iter().map(|m| {
+                    PathElement::new(
+                        vec![(m.center, m.high_level), (m.center, m.baseline_reference)],
+                        RGBColor(162, 64, 122).stroke_width(2),
+                    )
+                }))
+                .map_err(|error| format!("无法绘制高平台基线差：{error:?}"))?;
         }
     }
 
@@ -535,6 +672,87 @@ mod tests {
             signal: Arc::new(signal),
             time: None,
             dropped_rows: 0,
+        }
+    }
+
+    #[test]
+    fn waveform_csv_keeps_every_processed_sample_and_the_original_selected_coordinates() {
+        use crate::analyzer::response_from_result;
+        use crate::models::XRange;
+
+        let directory = tempdir().unwrap();
+        for real_time in [false, true] {
+            let mut dataset = fixture_dataset(
+                (0..15_030)
+                    .map(|i| {
+                        (i as f64 * 0.12).sin() * 0.001 + if i % 500 < 200 { 0.3 } else { 0.0 }
+                    })
+                    .collect(),
+            );
+            if real_time {
+                dataset.time = Some(Arc::new(
+                    (0..15_030).map(|i| 3.0 + i as f64 * 0.25).collect(),
+                ));
+            }
+            let x = |i: usize| {
+                if real_time {
+                    3.0 + i as f64 * 0.25
+                } else {
+                    i as f64
+                }
+            };
+            let request = AnalysisRequest {
+                x_range: Some(XRange {
+                    min: Some(x(100)),
+                    max: Some(x(14_900)),
+                }),
+                ..AnalysisRequest::default()
+            };
+            let (result, _) = analyze_dataset(&dataset, &request, None);
+            assert_eq!(result.x.len(), 14_801);
+            assert!(response_from_result(&result).plot.x.len() < result.x.len());
+            assert_ne!(result.original, result.processed);
+            let path = directory.path().join(format!("waveform-{real_time}.csv"));
+            export_waveform(&result, path.to_str().unwrap()).unwrap();
+            assert!(std::fs::read(&path).unwrap().starts_with(b"\xEF\xBB\xBF"));
+            let mut reader = csv::Reader::from_path(&path).unwrap();
+            assert_eq!(
+                reader.headers().unwrap().get(0),
+                Some(if real_time { "time" } else { "sample_index" })
+            );
+            assert_eq!(reader.headers().unwrap().get(2), Some("processed_signal"));
+            let rows: Vec<_> = reader
+                .deserialize::<(f64, f64, f64)>()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(rows.len(), result.x.len());
+            for (index, row) in rows.iter().enumerate() {
+                assert_eq!(
+                    *row,
+                    (
+                        result.x[index],
+                        result.original[index],
+                        result.processed[index]
+                    )
+                );
+            }
+            assert_eq!(rows.first().unwrap().0, x(100));
+            assert_eq!(rows.last().unwrap().0, x(14_900));
+            assert!(
+                export_waveform(
+                    &result,
+                    directory.path().join("missing/out.csv").to_str().unwrap()
+                )
+                .is_err()
+            );
+            assert!(
+                export_waveform(
+                    &result,
+                    directory.path().join("waveform.xlsx").to_str().unwrap()
+                )
+                .is_err()
+            );
+            assert!(!directory.path().join("waveform.xlsx").exists());
         }
     }
 
@@ -609,5 +827,64 @@ mod tests {
         let text = String::from_utf8_lossy(&raw);
         assert!(text.contains("xl/worksheets/sheet1.xml"));
         assert!(text.contains("xl/worksheets/sheet2.xml"));
+        // Read the workbook back: columns must encode the new physics and exact IDs.
+        use calamine::{Data, Reader, open_workbook_auto};
+        let mut book = open_workbook_auto(directory.path().join("droplets.xlsx")).unwrap();
+        let sheet = book.worksheet_range("Droplet Results").unwrap();
+        assert_eq!(
+            sheet.get_value((0, 2)),
+            Some(&Data::String("高平台实测值".into()))
+        );
+        assert_eq!(
+            sheet.get_value((0, 5)),
+            Some(&Data::String("低平台基线（高平台中心）".into()))
+        );
+        for (i, m) in result.droplet_measurements.iter().enumerate() {
+            let row = i as u32 + 1;
+            assert_eq!(sheet.get_value((row, 2)), Some(&Data::Float(m.high_level)));
+            assert_eq!(
+                sheet.get_value((row, 5)),
+                Some(&Data::Float(m.baseline_reference))
+            );
+            assert_eq!(
+                sheet.get_value((row, 6)),
+                Some(&Data::Float(m.corrected_signal))
+            );
+            assert_eq!(
+                sheet.get_value((row, 10)),
+                Some(&Data::String(format!("H{}", m.high_segment)))
+            );
+            for (column, id) in [(11, m.left_low_segment), (12, m.right_low_segment)] {
+                assert_eq!(
+                    sheet.get_value((row, column)),
+                    Some(&Data::String(
+                        id.map_or_else(|| MISSING.to_owned(), |n| format!("L{n}"))
+                    ))
+                );
+            }
+        }
+        let metadata = book.worksheet_range("Analysis Parameters").unwrap();
+        assert!(
+            metadata
+                .get_value((2, 1))
+                .unwrap()
+                .to_string()
+                .contains("highMinusLowBaselineV1")
+        );
+        let statistics = book.worksheet_range("Statistics").unwrap();
+        assert_eq!(
+            statistics.get_value((1, 1)),
+            Some(&Data::Float(result.droplet_statistics.mean_length.unwrap()))
+        );
+        assert_eq!(
+            statistics.get_value((2, 1)),
+            Some(&Data::Float(
+                result.droplet_statistics.length_standard_deviation.unwrap()
+            ))
+        );
+        assert_eq!(
+            statistics.get_value((3, 1)),
+            Some(&Data::Float(result.droplet_statistics.length_rsd.unwrap()))
+        );
     }
 }

@@ -2017,7 +2017,7 @@ dependencies = [
 
 [[package]]
 name = "microdroplet-spectrum-analyzer"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "calamine",
  "csv",

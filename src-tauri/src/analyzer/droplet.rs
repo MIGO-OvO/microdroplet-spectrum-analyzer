@@ -15,26 +15,24 @@
 //!     → droplet_statistics
 //! ```
 //!
-//! **Detection and measurement are decoupled.** The stability mask, the two-state
-//! classification and the pairing geometry read the smoothed *detection* signal,
-//! because deciding *where* a state is tolerates smoothing. Every physical number
+//! **Detection and measurement are decoupled.** The stability mask uses the
+//! smoothed *detection* signal to find regions; classification uses raw
+//! measured levels, and pairing uses segment centers. Every physical number
 //! (`level`, `standard_deviation`, `mad`, `corrected_signal`) is measured on the
-//! **raw** signal interior instead, so smoothing can never bias the reported Δ.
+//! **raw** signal interior. Smoothing can still affect boundaries and selected points.
 //!
-//! ## Why the Platform reference is interpolated
+//! ## Why the low baseline is interpolated
 //!
-//! `platform_reference` is a linear interpolation between the neighbouring left and
-//! right Platform levels at the Bottom's own x position. A single global Platform
-//! mean, or a one-sided reference, folds LED drift, detector drift, temperature
-//! baseline movement and long-run system offsets directly into the result. Two-sided
-//! local interpolation cancels a linear drift exactly, and a slow non-linear drift to
-//! first order. For `PL = 0.0348` at `t = 100`, `PR = 0.0343` at `t = 200`, Bottom at
-//! `t = 150`:
+//! `baseline_reference` interpolates adjacent low levels at the high segment's center.
+//! Δ is measured high minus this low baseline. Linear drift cancellation assumes
+//! correctly located centers and representative segment levels; nonlinear drift and
+//! detection errors still need experimental validation. For low levels 0.0005 at
+//! t=100 and 0.001 at t=200, and a high of 0.0348 at t=150:
 //!
 //! ```text
-//! platform_reference = 0.0348 + (0.0343 - 0.0348) · (150 - 100) / (200 - 100)
-//!                    = 0.03455
-//! corrected_signal   = 0.03455 - 0.0006169 = 0.0339331
+//! baseline_reference = 0.0005 + (0.001 - 0.0005) · (150 - 100) / (200 - 100)
+//!                    = 0.00075
+//! corrected_signal   = 0.0348 - 0.00075 = 0.03405
 //! ```
 
 use crate::models::{
@@ -711,13 +709,13 @@ fn try_merge(
     true
 }
 
-fn nearest_platform(segments: &[StableSegment], from: usize, forward: bool) -> Option<usize> {
+fn nearest_low(segments: &[StableSegment], from: usize, forward: bool) -> Option<usize> {
     if forward {
-        (from + 1..segments.len()).find(|index| segments[*index].kind == SegmentKind::Platform)
+        (from + 1..segments.len()).find(|index| segments[*index].kind == SegmentKind::Bottom)
     } else {
         (0..from)
             .rev()
-            .find(|index| segments[*index].kind == SegmentKind::Platform)
+            .find(|index| segments[*index].kind == SegmentKind::Bottom)
     }
 }
 
@@ -727,34 +725,37 @@ fn push_flag(flags: &mut Vec<QualityFlag>, flag: QualityFlag) {
     }
 }
 
-/// Platform reference at an arbitrary position between two Platform levels.
+/// Low baseline at a high segment's center between two low levels.
 ///
 /// ```text
-/// reference = left + (right − left) · (t_bottom − t_left) / (t_right − t_left)
+/// reference = left + (right − left) · (t_high − t_left) / (t_right − t_left)
 /// ```
 ///
 /// `t` values are segment centre coordinates: the real time column when the dataset
 /// has one, sample indices otherwise. Returns `None` when the axis cannot express the
 /// interval (non-finite or non-increasing), so the caller can fall back instead of
-/// dividing by zero. The ratio is clamped, so a Bottom sitting marginally outside its
-/// reference span is still interpolated rather than extrapolated.
+/// dividing by zero. A high outside the time bracket also refuses real-time
+/// interpolation; the caller then uses flagged sample-index interpolation.
 fn interpolate_reference(
     left_level: f64,
     left_t: f64,
     right_level: f64,
     right_t: f64,
-    bottom_t: f64,
+    high_t: f64,
 ) -> Option<f64> {
     let denominator = right_t - left_t;
     if !denominator.is_finite() || denominator <= 0.0 {
         return None;
     }
-    let ratio = ((bottom_t - left_t) / denominator).clamp(0.0, 1.0);
+    if !high_t.is_finite() || high_t < left_t || high_t > right_t {
+        return None;
+    }
+    let ratio = (high_t - left_t) / denominator;
     let reference = left_level + (right_level - left_level) * ratio;
     reference.is_finite().then_some(reference)
 }
 
-/// Stage 5 — associate every Bottom with its neighbouring Platform references and
+/// Stage 5 — associate every high with neighbouring low baseline references and
 /// compute the locally corrected signal.
 fn build_measurements(
     segments: &[StableSegment],
@@ -769,7 +770,7 @@ fn build_measurements(
     let mut skipped = 0usize;
 
     // Robust typical spacing between neighbouring stable segments: the yardstick for
-    // "is this Platform actually adjacent, or a leftover from a missing region?".
+    // "is this low actually adjacent, or a leftover from a missing region?".
     let mut gaps: Vec<f64> = Vec::new();
     for pair in segments.windows(2) {
         let distance = (x[pair[1].center_index] - x[pair[0].center_index]).abs();
@@ -789,17 +790,17 @@ fn build_measurements(
     let soft_gap = params.reference_gap_factor * typical;
     let hard_gap = 2.0 * soft_gap;
 
-    for (position, bottom) in segments.iter().enumerate() {
-        if bottom.kind != SegmentKind::Bottom {
+    for (position, high) in segments.iter().enumerate() {
+        if high.kind != SegmentKind::Platform {
             continue;
         }
-        let left_position = nearest_platform(segments, position, false);
-        let right_position = nearest_platform(segments, position, true);
-        let bottom_x = x[bottom.center_index];
+        let left_position = nearest_low(segments, position, false);
+        let right_position = nearest_low(segments, position, true);
+        let high_x = x[high.center_index];
         let left_distance =
-            left_position.map(|index| (bottom_x - x[segments[index].center_index]).abs());
+            left_position.map(|index| (high_x - x[segments[index].center_index]).abs());
         let right_distance =
-            right_position.map(|index| (bottom_x - x[segments[index].center_index]).abs());
+            right_position.map(|index| (high_x - x[segments[index].center_index]).abs());
 
         let mut flags: Vec<QualityFlag> = Vec::new();
         let mut too_far = false;
@@ -821,7 +822,7 @@ fn build_measurements(
             push_flag(&mut flags, QualityFlag::LargeReferenceGap);
         }
 
-        // Every branch either yields the reference triple or skips this Bottom.
+        // Every branch either yields the baseline triple or skips this high.
         let resolved: Option<(Option<usize>, Option<usize>, ReferenceMode, f64)> =
             match (usable_left, usable_right) {
                 (Some(left_index), Some(right_index)) => {
@@ -829,23 +830,18 @@ fn build_measurements(
                     let right = &segments[right_index];
                     let mut t_left = x[left.center_index];
                     let mut t_right = x[right.center_index];
-                    let mut t_bottom = bottom_x;
+                    let mut t_high = high_x;
                     let mut reference =
-                        interpolate_reference(left.level, t_left, right.level, t_right, t_bottom);
+                        interpolate_reference(left.level, t_left, right.level, t_right, t_high);
                     if reference.is_none() {
                         // Real x is unavailable or not usable for interpolation: fall
                         // back to sample positions instead of dividing by zero.
                         push_flag(&mut flags, QualityFlag::IndexTimeFallback);
                         t_left = left.center_index as f64;
                         t_right = right.center_index as f64;
-                        t_bottom = bottom.center_index as f64;
-                        reference = interpolate_reference(
-                            left.level,
-                            t_left,
-                            right.level,
-                            t_right,
-                            t_bottom,
-                        );
+                        t_high = high.center_index as f64;
+                        reference =
+                            interpolate_reference(left.level, t_left, right.level, t_right, t_high);
                     }
                     match reference {
                         Some(reference) => Some((
@@ -855,10 +851,14 @@ fn build_measurements(
                             reference,
                         )),
                         None => {
-                            // Degenerate geometry: take the nearer Platform rather than
+                            // Degenerate geometry: take the nearer low rather than
                             // extrapolating from an unreliable axis.
+                            if !params.allow_single_sided_reference {
+                                skipped += 1;
+                                continue;
+                            }
                             push_flag(&mut flags, QualityFlag::SingleSidedReference);
-                            if (t_bottom - t_left).abs() <= (t_right - t_bottom).abs() {
+                            if (t_high - t_left).abs() <= (t_right - t_high).abs() {
                                 Some((Some(left_index), None, ReferenceMode::LeftOnly, left.level))
                             } else {
                                 Some((
@@ -909,20 +909,19 @@ fn build_measurements(
 
         let left = left_segment.map(|index| &segments[index]);
         let right = right_segment.map(|index| &segments[index]);
-        let noisy_platform = left
-            .is_some_and(|s| s.mad > NOISY_SEGMENT_SIGMA * raw_noise.max(floor))
+        let noisy_low = left.is_some_and(|s| s.mad > NOISY_SEGMENT_SIGMA * raw_noise.max(floor))
             || right.is_some_and(|s| s.mad > NOISY_SEGMENT_SIGMA * raw_noise.max(floor));
-        if noisy_platform {
-            push_flag(&mut flags, QualityFlag::NoisyPlatform);
-        }
-        if bottom.mad > NOISY_SEGMENT_SIGMA * raw_noise.max(floor) {
+        if noisy_low {
             push_flag(&mut flags, QualityFlag::NoisyBottom);
+        }
+        if high.mad > NOISY_SEGMENT_SIGMA * raw_noise.max(floor) {
+            push_flag(&mut flags, QualityFlag::NoisyPlatform);
         }
 
         // An unrecognised stable structure inside the reference span means the local
         // drift correction rests on a region we did not model.
-        let span_low = left.map_or(bottom.number, |s| s.number.min(bottom.number));
-        let span_high = right.map_or(bottom.number, |s| s.number.max(bottom.number));
+        let span_low = left.map_or(high.number, |s| s.number.min(high.number));
+        let span_high = right.map_or(high.number, |s| s.number.max(high.number));
         let has_unknown_inside = segments.iter().any(|segment| {
             segment.kind == SegmentKind::Unknown
                 && segment.number >= span_low
@@ -938,16 +937,16 @@ fn build_measurements(
             ReferenceMode::None => 0.0,
         };
         let worst = left
-            .map(|s| (bottom_x - x[s.center_index]).abs())
+            .map(|s| (high_x - x[s.center_index]).abs())
             .into_iter()
-            .chain(right.map(|s| (bottom_x - x[s.center_index]).abs()))
+            .chain(right.map(|s| (high_x - x[s.center_index]).abs()))
             .fold(0.0_f64, f64::max);
         let gap_factor = if worst <= soft_gap || hard_gap <= soft_gap {
             1.0
         } else {
             1.0 - 0.5 * ((worst - soft_gap) / (hard_gap - soft_gap)).clamp(0.0, 1.0)
         };
-        let mut confidence = bottom.confidence;
+        let mut confidence = high.confidence;
         if let Some(segment) = left {
             confidence = confidence.min(segment.confidence);
         }
@@ -963,16 +962,16 @@ fn build_measurements(
 
         measurements.push(DropletMeasurement {
             number: 0,
-            bottom_segment: bottom.number,
-            left_platform_segment: left.map(|s| s.number),
-            right_platform_segment: right.map(|s| s.number),
-            center_index: bottom.center_index,
-            center: bottom_x,
-            bottom_level: bottom.level,
-            left_platform_level: left.map(|s| s.level),
-            right_platform_level: right.map(|s| s.level),
-            platform_reference: reference,
-            corrected_signal: reference - bottom.level,
+            high_segment: high.number,
+            left_low_segment: left.map(|s| s.number),
+            right_low_segment: right.map(|s| s.number),
+            center_index: high.center_index,
+            center: high_x,
+            high_level: high.level,
+            left_low_level: left.map(|s| s.level),
+            right_low_level: right.map(|s| s.level),
+            baseline_reference: reference,
+            corrected_signal: high.level - reference,
             reference_mode: mode,
             confidence,
             quality_flags: flags,
@@ -984,7 +983,7 @@ fn build_measurements(
     }
     if skipped > 0 {
         warnings.push(format!(
-            "{skipped} 个 Bottom 段缺少可用的参考平台，已跳过这些测量。"
+            "{skipped} 个高平台缺少可用的低平台基线，已跳过这些测量。"
         ));
     }
     let single = measurements
@@ -993,7 +992,7 @@ fn build_measurements(
         .count();
     if single > 0 {
         warnings.push(format!(
-            "{single} 个液滴只有单侧参考平台，已按较低置信度输出（referenceMode 为 leftOnly / rightOnly）。"
+            "{single} 个高平台仅使用单侧低平台基线（未插值），已按较低规则评分输出。"
         ));
     }
     if !has_real_time {
@@ -1010,15 +1009,29 @@ fn droplet_statistics(
         .iter()
         .filter(|segment| segment.kind == SegmentKind::Unknown)
         .count();
+    let lengths: Vec<f64> = segments
+        .iter()
+        .filter(|segment| segment.kind == SegmentKind::Platform)
+        .map(|segment| segment.length as f64)
+        .collect();
+    let mean_length = (!lengths.is_empty()).then(|| mean(&lengths));
+    let length_standard_deviation = (!lengths.is_empty()).then(|| standard_deviation(&lengths));
+    let length_rsd = mean_length
+        .filter(|average| *average > 0.0)
+        .zip(length_standard_deviation)
+        .map(|(average, deviation)| deviation / average * 100.0);
     if measurements.is_empty() {
         return DropletStatistics {
             unknown_segment_count,
+            mean_length,
+            length_standard_deviation,
+            length_rsd,
             ..Default::default()
         };
     }
     let corrected: Vec<f64> = measurements.iter().map(|m| m.corrected_signal).collect();
-    let bottoms: Vec<f64> = measurements.iter().map(|m| m.bottom_level).collect();
-    let references: Vec<f64> = measurements.iter().map(|m| m.platform_reference).collect();
+    let highs: Vec<f64> = measurements.iter().map(|m| m.high_level).collect();
+    let references: Vec<f64> = measurements.iter().map(|m| m.baseline_reference).collect();
     let average = mean(&corrected);
     let deviation = standard_deviation(&corrected);
     DropletStatistics {
@@ -1032,8 +1045,11 @@ fn droplet_statistics(
         } else {
             deviation / average * 100.0
         }),
-        mean_bottom: Some(mean(&bottoms)),
-        mean_platform_reference: Some(mean(&references)),
+        mean_high: Some(mean(&highs)),
+        mean_baseline: Some(mean(&references)),
+        mean_length,
+        length_standard_deviation,
+        length_rsd,
         interpolated_count: measurements
             .iter()
             .filter(|m| m.reference_mode == ReferenceMode::Interpolated)
@@ -1309,7 +1325,7 @@ mod tests {
         signal
     }
 
-    /// `Platform / Bottom` repeated `cycles` times, closed by one more Platform.
+    /// `Bottom / Platform` repeated `cycles` times, closed by one more Bottom.
     fn repeating_waveform(
         cycles: usize,
         platform_len: usize,
@@ -1318,10 +1334,10 @@ mod tests {
     ) -> Vec<f64> {
         let mut sections = Vec::new();
         for _ in 0..cycles {
-            sections.push((PLATFORM, platform_len));
             sections.push((BOTTOM, bottom_len));
+            sections.push((PLATFORM, platform_len));
         }
-        sections.push((PLATFORM, platform_len));
+        sections.push((BOTTOM, bottom_len));
         sections_waveform(&sections, noise)
     }
 
@@ -1360,15 +1376,15 @@ mod tests {
         analyze_with(signal, DropletParams::default())
     }
 
-    /// Upper-state mean over a record: the naive single global reference a user would
+    /// Lower-state mean over a record: the naive single global reference a user would
     /// otherwise pick, kept here purely as a control comparison.
-    fn platform_mean(signal: &[f64]) -> f64 {
-        let high: Vec<f64> = signal
+    fn low_mean(signal: &[f64]) -> f64 {
+        let low: Vec<f64> = signal
             .iter()
             .copied()
-            .filter(|value| *value > 0.02)
+            .filter(|value| *value < 0.02)
             .collect();
-        high.iter().sum::<f64>() / high.len() as f64
+        low.iter().sum::<f64>() / low.len() as f64
     }
 
     fn assert_close(actual: f64, expected: f64, tolerance: f64, context: &str) {
@@ -1382,27 +1398,24 @@ mod tests {
 
     #[test]
     fn documented_interpolation_example_is_reproduced_exactly() {
-        // §48 worked example, evaluated on the formula itself: PL = 0.0348 at t = 100,
-        // PR = 0.0343 at t = 200, Bottom at t = 150.
-        let reference = interpolate_reference(0.0348, 100.0, 0.0343, 200.0, 150.0).unwrap();
-        assert_close(reference, 0.03455, 1e-15, "documented reference");
-        assert_close(
-            reference - 0.0006169,
-            0.0339331,
-            1e-12,
-            "documented corrected Δ",
-        );
+        // Low-left 0.0005 at t=100; low-right 0.001 at t=200; high at t=150.
+        let reference = interpolate_reference(0.0005, 100.0, 0.001, 200.0, 150.0).unwrap();
+        assert_close(reference, 0.00075, 1e-15, "documented reference");
+        assert_close(0.0348 - reference, 0.03405, 1e-12, "documented corrected Δ");
         // An axis that cannot express the interval must refuse instead of dividing.
         assert!(interpolate_reference(0.0348, 100.0, 0.0343, 100.0, 150.0).is_none());
         assert!(interpolate_reference(0.0348, 200.0, 0.0343, 100.0, 150.0).is_none());
 
-        // Then the same geometry end to end: Platform A centre 100 @ 0.0348, Bottom B
-        // centre 150 @ 0.0006169, Platform C centre 200 @ 0.0343. A leading ramp keeps
+        // Then the same geometry end to end: low A at 100, high B at 150, low C at 200.
+        // A leading ramp keeps
         // the record honest without producing a segment of its own.
-        let mut signal: Vec<f64> = (0..60).map(|i| 0.0348 * i as f64 / 60.0).collect();
-        signal.extend(vec![0.0348; 81]); // 60..=140 -> centre 100
-        signal.extend(vec![0.0006169; 19]); // 141..=159 -> centre 150
-        signal.extend(vec![0.0343; 81]); // 160..=240 -> centre 200
+        // Binary-exact levels isolate pairing from zero-noise rounding at boundaries.
+        let mut signal: Vec<f64> = (0..60)
+            .map(|i| -0.03 + (0.03 + 1.0 / 1024.0) * i as f64 / 60.0)
+            .collect();
+        signal.extend(vec![1.0 / 1024.0; 81]); // 60..=140 -> centre 100
+        signal.extend(vec![0.03125; 19]); // 141..=159 -> centre 150
+        signal.extend(vec![1.0 / 512.0; 81]); // 160..=240 -> centre 200
         let request = AnalysisRequest {
             mode: AnalysisMode::Droplet,
             preprocess: PreprocessParams {
@@ -1417,23 +1430,34 @@ mod tests {
         let (result, _) = analyze_dataset(&dataset(signal), &request, None);
         let segments = &result.stable_segments;
         assert_eq!(segments.len(), 3, "{segments:#?}");
-        assert_eq!(segments[0].kind, SegmentKind::Platform);
-        assert_eq!(segments[1].kind, SegmentKind::Bottom);
-        assert_eq!(segments[2].kind, SegmentKind::Platform);
+        assert_eq!(segments[0].kind, SegmentKind::Bottom);
+        assert_eq!(segments[1].kind, SegmentKind::Platform);
+        assert_eq!(segments[2].kind, SegmentKind::Bottom);
         for (segment, centre) in segments.iter().zip([100usize, 150, 200]) {
             assert_eq!(segment.center_index, centre, "{segments:#?}");
         }
-        assert_close(segments[0].level, 0.0348, 1e-12, "Platform A level");
-        assert_close(segments[1].level, 0.0006169, 1e-12, "Bottom B level");
-        assert_close(segments[2].level, 0.0343, 1e-12, "Platform C level");
+        assert_close(segments[0].level, 1.0 / 1024.0, 1e-12, "Low A level");
+        assert_close(segments[1].level, 0.03125, 1e-12, "High B level");
+        assert_close(segments[2].level, 1.0 / 512.0, 1e-12, "Low C level");
 
         assert_eq!(result.droplet_measurements.len(), 1);
         let measurement = &result.droplet_measurements[0];
-        assert_eq!(measurement.left_platform_segment, Some(1));
-        assert_eq!(measurement.right_platform_segment, Some(3));
+        assert_eq!(measurement.left_low_segment, Some(1));
+        assert_eq!(measurement.right_low_segment, Some(3));
         assert_eq!(measurement.reference_mode, ReferenceMode::Interpolated);
-        assert_close(measurement.platform_reference, 0.03455, 1e-12, "reference");
-        assert_close(measurement.corrected_signal, 0.0339331, 1e-9, "corrected Δ");
+        assert_eq!(measurement.high_segment, 2);
+        assert_close(
+            measurement.baseline_reference,
+            0.00146484375,
+            1e-12,
+            "reference",
+        );
+        assert_close(
+            measurement.corrected_signal,
+            0.02978515625,
+            1e-9,
+            "corrected Δ",
+        );
     }
 
     // ------------------------------------------------------- §17 offset invariance
@@ -1527,22 +1551,24 @@ mod tests {
             signal.push(drift + pseudo_noise(index, 0.0012));
         }
 
+        // Reflect the legacy drift fixture: low baseline drifts, high state is baseline + Δ.
+        let signal: Vec<f64> = signal.into_iter().map(|v| 0.04 - v).collect();
         let analysis = analyze(signal.clone());
         assert_eq!(
             analysis.measurements.len(),
             cycles,
-            "each Bottom must still be paired: {:?}",
+            "each high must still be paired: {:?}",
             analysis.warnings
         );
         let mut worst_interpolated = 0.0_f64;
         let mut worst_global_mean = 0.0_f64;
-        let global_reference = platform_mean(&signal);
+        let global_reference = low_mean(&signal);
         for measurement in &analysis.measurements {
             assert_eq!(measurement.reference_mode, ReferenceMode::Interpolated);
             worst_interpolated =
                 worst_interpolated.max((measurement.corrected_signal - TRUE_DELTA).abs());
             worst_global_mean = worst_global_mean
-                .max((global_reference - measurement.bottom_level - TRUE_DELTA).abs());
+                .max((measurement.high_level - global_reference - TRUE_DELTA).abs());
         }
         // Interpolation tracks the drift; the fixed global mean does not.
         assert!(
@@ -1615,15 +1641,14 @@ mod tests {
             analysis.segments
         );
         assert_eq!(analysis.measurements.len(), 2);
-        // The first Bottom opens the record, so it can only look right; the second one
-        // is closed in by Platforms on both sides.
+        // The first high has two low neighbours; the final high only has a left low.
         assert_eq!(
             analysis.measurements[0].reference_mode,
-            ReferenceMode::RightOnly
+            ReferenceMode::Interpolated
         );
         assert_eq!(
             analysis.measurements[1].reference_mode,
-            ReferenceMode::Interpolated
+            ReferenceMode::LeftOnly
         );
         for measurement in &analysis.measurements {
             assert_close(measurement.corrected_signal, 0.0345, 1e-9, "clean step Δ");
@@ -1680,8 +1705,8 @@ mod tests {
             .iter()
             .filter(|segment| segment.kind == SegmentKind::Platform)
             .count();
-        // Three cycles close with a final Platform: four Platforms, three Bottoms.
-        assert_eq!(platforms, 4, "{:#?}", analysis.segments);
+        // Three cycles close with a final low: three highs, four lows.
+        assert_eq!(platforms, 3, "{:#?}", analysis.segments);
         assert_eq!(analysis.measurements.len(), 3);
     }
 
@@ -1727,15 +1752,13 @@ mod tests {
             "later droplets must survive a missing region: {:?}",
             analysis.warnings
         );
-        // Bottom/Bottom pairing must never be produced by parity: every measurement
-        // still refers to Platform segments on at least one side.
+        // Every high must refer to low segments, never another high by parity.
         for measurement in &analysis.measurements {
             assert!(
-                measurement.left_platform_segment.is_some()
-                    || measurement.right_platform_segment.is_some()
+                measurement.left_low_segment.is_some() || measurement.right_low_segment.is_some()
             );
         }
-        // The droplets after the gap keep the correct Δ because each Bottom looks up
+        // The droplets after the gap keep the correct Δ because each high looks up
         // its own neighbours instead of inheriting a global index offset.
         let correct = analysis
             .measurements
@@ -1753,14 +1776,14 @@ mod tests {
     // ------------------------------------------------------------- §11/§22 boundaries
 
     #[test]
-    fn first_and_last_bottoms_fall_back_to_single_sided_references() {
+    fn first_and_last_highs_fall_back_to_single_sided_references() {
         let signal = sections_waveform(
             &[
-                (BOTTOM, 120),
-                (PLATFORM, 150),
-                (BOTTOM, 120),
-                (PLATFORM, 150),
-                (BOTTOM, 120),
+                (PLATFORM, 120),
+                (BOTTOM, 150),
+                (PLATFORM, 120),
+                (BOTTOM, 150),
+                (PLATFORM, 120),
             ],
             0.0012,
         );
@@ -1805,11 +1828,11 @@ mod tests {
     fn single_sided_reference_can_be_disabled() {
         let signal = sections_waveform(
             &[
-                (BOTTOM, 120),
-                (PLATFORM, 150),
-                (BOTTOM, 120),
-                (PLATFORM, 150),
-                (BOTTOM, 120),
+                (PLATFORM, 120),
+                (BOTTOM, 150),
+                (PLATFORM, 120),
+                (BOTTOM, 150),
+                (PLATFORM, 120),
             ],
             0.0012,
         );
@@ -1833,8 +1856,8 @@ mod tests {
     fn a_platform_far_outside_the_typical_spacing_is_flagged_and_never_silently_used() {
         // Fourteen regular cycles, then one 600-sample stretch at an intermediate
         // level. That stretch is a stable structure that belongs to neither state, so
-        // it is reported as Unknown and hides the four Platforms it replaced: the
-        // Bottom in front of it has to reach two cycles further for its reference.
+        // it is reported as Unknown and hides low references: a high nearby must
+        // reach further for its baseline.
         let mut signal = repeating_waveform(14, 200, 200, 0.0012);
         for offset in 0..600 {
             signal[2400 + offset] = 0.018;
@@ -1916,7 +1939,7 @@ mod tests {
 
     #[test]
     fn non_uniform_time_axis_is_used_for_interpolation() {
-        let signal = sections_waveform(&[(PLATFORM, 120), (BOTTOM, 90), (0.0343, 120)], 0.0012);
+        let signal = sections_waveform(&[(BOTTOM, 120), (PLATFORM, 90), (0.0011, 120)], 0.0012);
         // Monotone but strongly non-uniform sampling.
         let time: Vec<f64> = (0..signal.len())
             .map(|index| index as f64 + (index * index) as f64 / 4000.0)
@@ -1930,17 +1953,17 @@ mod tests {
         let segments = &result.stable_segments;
         let left = segments
             .iter()
-            .find(|segment| Some(segment.number) == measurement.left_platform_segment)
+            .find(|segment| Some(segment.number) == measurement.left_low_segment)
             .expect("left platform");
         let right = segments
             .iter()
-            .find(|segment| Some(segment.number) == measurement.right_platform_segment)
+            .find(|segment| Some(segment.number) == measurement.right_low_segment)
             .expect("right platform");
         let expected = left.level
             + (right.level - left.level) * (measurement.center - left.center)
                 / (right.center - left.center);
         assert_close(
-            measurement.platform_reference,
+            measurement.baseline_reference,
             expected,
             1e-12,
             "real-x reference",
@@ -1958,13 +1981,13 @@ mod tests {
 
     #[test]
     fn a_degenerate_time_axis_falls_back_to_indices_without_dividing_by_zero() {
-        let signal = sections_waveform(&[(PLATFORM, 120), (BOTTOM, 90), (PLATFORM, 120)], 0.0012);
+        let signal = sections_waveform(&[(BOTTOM, 120), (PLATFORM, 90), (BOTTOM, 120)], 0.0012);
         let flat_time = vec![5.0; signal.len()];
         let request = droplet_request(DropletParams::default());
         let (result, _) = analyze_dataset(&dataset_with_time(signal, flat_time), &request, None);
         assert_eq!(result.droplet_measurements.len(), 1);
         let measurement = &result.droplet_measurements[0];
-        assert!(measurement.platform_reference.is_finite());
+        assert!(measurement.baseline_reference.is_finite());
         assert!(
             measurement
                 .quality_flags
@@ -1998,7 +2021,8 @@ mod tests {
     fn negative_levels_are_handled_without_sign_confusion() {
         // Bottom is the "largest" value in magnitude but the lower state: the model is
         // about ordering, not about absolute sign.
-        let signal = sections_waveform(&[(-0.05, 150), (-0.0841831, 80), (-0.05, 150)], 0.0012);
+        let signal =
+            sections_waveform(&[(-0.0841831, 150), (-0.05, 80), (-0.0841831, 150)], 0.0012);
         let analysis = analyze(signal);
         assert_eq!(analysis.measurements.len(), 1, "{:#?}", analysis.segments);
         assert_close(
@@ -2014,15 +2038,15 @@ mod tests {
 
     #[test]
     fn a_slow_transition_never_becomes_a_third_state() {
-        let mut signal = vec![PLATFORM; 200];
-        for offset in 0..40 {
-            signal.push(PLATFORM - (PLATFORM - BOTTOM) * offset as f64 / 39.0);
-        }
-        signal.extend(vec![BOTTOM; 200]);
+        let mut signal = vec![BOTTOM; 200];
         for offset in 0..40 {
             signal.push(BOTTOM + (PLATFORM - BOTTOM) * offset as f64 / 39.0);
         }
         signal.extend(vec![PLATFORM; 200]);
+        for offset in 0..40 {
+            signal.push(PLATFORM - (PLATFORM - BOTTOM) * offset as f64 / 39.0);
+        }
+        signal.extend(vec![BOTTOM; 200]);
         let analysis = analyze(signal);
         assert!(!analysis.segments.is_empty());
         for segment in &analysis.segments {
@@ -2134,6 +2158,165 @@ mod tests {
         assert!(normalized.slope_factor.is_finite() && normalized.slope_factor >= 1.0);
         assert!(normalized.cluster_separation_factor >= 0.5);
         assert!(normalized.reference_gap_factor >= 1.0);
+    }
+
+    #[test]
+    fn high_platform_lengths_include_unpaired_highs_and_exclude_other_states() {
+        let mut segments = pairing_fixture(
+            &[
+                (SegmentKind::Platform, 0.3),
+                (SegmentKind::Bottom, 0.0),
+                (SegmentKind::Unknown, 0.1),
+                (SegmentKind::Platform, 0.5),
+            ],
+            &[10.0, 20.0, 30.0, 40.0],
+        );
+        for (segment, length) in segments.iter_mut().zip([10, 800, 900, 30]) {
+            segment.length = length;
+            segment.effective_length = 3;
+        }
+        let stats = droplet_statistics(&[], &segments);
+        assert_eq!(stats.droplet_count, 0);
+        assert_eq!(stats.mean_length, Some(20.0));
+        assert_eq!(stats.length_standard_deviation, Some(10.0));
+        assert_eq!(stats.length_rsd, Some(50.0));
+        let single = droplet_statistics(&[], &segments[..1]);
+        assert_eq!(single.mean_length, Some(10.0));
+        assert_eq!(single.length_rsd, Some(0.0));
+        let empty = droplet_statistics(&[], &segments[1..3]);
+        assert_eq!(empty.mean_length, None);
+        assert_eq!(empty.length_standard_deviation, None);
+        assert_eq!(empty.length_rsd, None);
+    }
+
+    fn pairing_fixture(levels: &[(SegmentKind, f64)], x: &[f64]) -> Vec<StableSegment> {
+        levels
+            .iter()
+            .enumerate()
+            .map(|(i, (kind, level))| StableSegment {
+                number: i + 1,
+                start_index: i,
+                end_index: i,
+                center_index: i,
+                start: x[i],
+                end: x[i],
+                center: x[i],
+                level: *level,
+                standard_deviation: 0.0,
+                mad: 0.0,
+                slope: 0.0,
+                length: 1,
+                effective_length: 1,
+                kind: *kind,
+                confidence: 1.0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn asymmetric_highs_use_their_own_low_baselines_and_wire_ids() {
+        let x = [0.0, 10.0, 30.0, 50.0, 90.0];
+        let segments = pairing_fixture(
+            &[
+                (SegmentKind::Bottom, 2.0),
+                (SegmentKind::Platform, 20.0),
+                (SegmentKind::Bottom, 5.0),
+                (SegmentKind::Platform, 30.0),
+                (SegmentKind::Bottom, 8.0),
+            ],
+            &x,
+        );
+        let (m, warnings, skipped) =
+            build_measurements(&segments, &x, &DropletParams::default(), 0.01, true, 1e-12);
+        assert!(warnings.is_empty());
+        assert_eq!(skipped, 0);
+        assert_eq!(m.len(), 2);
+        for (measurement, (high, left, right, baseline, delta)) in
+            m.iter().zip([(2, 1, 3, 3.0, 17.0), (4, 3, 5, 6.0, 24.0)])
+        {
+            assert_eq!(measurement.high_segment, high);
+            assert_eq!(measurement.left_low_segment, Some(left));
+            assert_eq!(measurement.right_low_segment, Some(right));
+            assert_eq!(measurement.reference_mode, ReferenceMode::Interpolated);
+            assert_close(
+                measurement.baseline_reference,
+                baseline,
+                1e-12,
+                "asymmetric baseline",
+            );
+            assert_close(
+                measurement.corrected_signal,
+                delta,
+                1e-12,
+                "asymmetric delta",
+            );
+        }
+        let stats = droplet_statistics(&m, &segments);
+        assert_eq!(stats.mean_high, Some(25.0));
+        assert_eq!(stats.mean_baseline, Some(4.5));
+        assert_eq!(stats.mean_corrected_signal, Some(20.5));
+        let wire = serde_json::to_value(&m[0]).unwrap();
+        assert_eq!(wire["highSegment"], 2);
+        assert_eq!(wire["leftLowSegment"], 1);
+        assert_eq!(wire["baselineReference"], 3.0);
+        assert!(wire.get("bottomSegment").is_none());
+        assert!(wire.get("platformReference").is_none());
+    }
+
+    #[test]
+    fn high_without_low_is_detected_but_never_fabricates_a_baseline() {
+        let x = [0.0, 1.0];
+        let segments = pairing_fixture(
+            &[(SegmentKind::Platform, 20.0), (SegmentKind::Unknown, 10.0)],
+            &x,
+        );
+        let (m, warnings, skipped) =
+            build_measurements(&segments, &x, &DropletParams::default(), 0.01, true, 1e-12);
+        assert!(m.is_empty());
+        assert_eq!(skipped, 1);
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("高平台缺少可用的低平台基线"))
+        );
+    }
+
+    #[test]
+    fn high_outside_real_time_bracket_uses_flagged_index_interpolation() {
+        let x = [0.0, 30.0, 20.0];
+        let segments = pairing_fixture(
+            &[
+                (SegmentKind::Bottom, 2.0),
+                (SegmentKind::Platform, 20.0),
+                (SegmentKind::Bottom, 6.0),
+            ],
+            &x,
+        );
+        let (m, _, _) =
+            build_measurements(&segments, &x, &DropletParams::default(), 0.01, true, 1e-12);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].baseline_reference, 4.0);
+        assert!(m[0].quality_flags.contains(&QualityFlag::IndexTimeFallback));
+    }
+
+    #[test]
+    fn low_baselines_beyond_hard_gap_are_not_used() {
+        let x = [0.0, 10.0, 20.0, 30.0, 40.0, 200.0];
+        let segments = pairing_fixture(
+            &[
+                (SegmentKind::Bottom, 2.0),
+                (SegmentKind::Unknown, 3.0),
+                (SegmentKind::Unknown, 3.0),
+                (SegmentKind::Unknown, 3.0),
+                (SegmentKind::Unknown, 3.0),
+                (SegmentKind::Platform, 20.0),
+            ],
+            &x,
+        );
+        let (m, _, skipped) =
+            build_measurements(&segments, &x, &DropletParams::default(), 0.01, true, 1e-12);
+        assert!(m.is_empty());
+        assert_eq!(skipped, 1);
     }
 
     // ------------------------------------------------------------------- §37 scale

@@ -76,8 +76,11 @@ export const SAMPLE_RESULT: AnalysisResponse = {
     maxCorrectedSignal: null,
     standardDeviation: null,
     rsd: null,
-    meanBottom: null,
-    meanPlatformReference: null,
+    meanHigh: null,
+    meanBaseline: null,
+    meanLength: null,
+    lengthStandardDeviation: null,
+    lengthRsd: null,
     interpolatedCount: 0,
     singleSidedCount: 0,
     lowConfidenceCount: 0,
@@ -157,29 +160,30 @@ const dropletStableSegments: StableSegment[] = dropletBounds.map((bounds, index)
 }));
 
 const dropletMeasurements: DropletMeasurement[] = [];
-for (let index = 1; index < dropletStableSegments.length; index += 1) {
+for (let index = 0; index < dropletStableSegments.length; index += 1) {
   const segment = dropletStableSegments[index];
-  if (segment.kind !== "bottom") continue;
-  const left = dropletStableSegments[index - 1];
+  if (segment.kind !== "platform") continue;
+  const left = dropletStableSegments[index - 1] ?? null;
   const right = dropletStableSegments[index + 1] ?? null;
-  const reference = right
+  if (!left && !right) continue;
+  const reference = left && right
     ? left.level + (right.level - left.level) * ((segment.center - left.center) / (right.center - left.center))
-    : left.level;
+    : (left ?? right)!.level;
   dropletMeasurements.push({
     number: dropletMeasurements.length + 1,
-    bottomSegment: segment.number,
-    leftPlatformSegment: left.number,
-    rightPlatformSegment: right?.number ?? null,
+    highSegment: segment.number,
+    leftLowSegment: left?.number ?? null,
+    rightLowSegment: right?.number ?? null,
     centerIndex: segment.centerIndex,
     center: segment.center,
-    bottomLevel: segment.level,
-    leftPlatformLevel: left.level,
-    rightPlatformLevel: right?.level ?? null,
-    platformReference: reference,
-    correctedSignal: reference - segment.level,
-    referenceMode: right ? "interpolated" : "leftOnly",
-    confidence: right ? 0.38 : 0.23,
-    qualityFlags: right
+    highLevel: segment.level,
+    leftLowLevel: left?.level ?? null,
+    rightLowLevel: right?.level ?? null,
+    baselineReference: reference,
+    correctedSignal: segment.level - reference,
+    referenceMode: left && right ? "interpolated" : left ? "leftOnly" : "rightOnly",
+    confidence: left && right ? 0.38 : 0.23,
+    qualityFlags: left && right
       ? ["lowClassificationConfidence"]
       : ["singleSidedReference", "lowClassificationConfidence"],
   });
@@ -191,6 +195,10 @@ const correctedDeviation = Math.sqrt(
   correctedValues.reduce((sum, value) => sum + (value - meanCorrected) ** 2, 0) / correctedValues.length,
 );
 
+const highLengths = dropletStableSegments.filter(segment => segment.kind === "platform").map(segment => segment.length);
+const meanLength = highLengths.reduce((sum, value) => sum + value, 0) / highLengths.length;
+const lengthDeviation = Math.sqrt(highLengths.reduce((sum, value) => sum + (value - meanLength) ** 2, 0) / highLengths.length);
+
 const dropletStatistics: DropletStatistics = {
   dropletCount: dropletMeasurements.length,
   meanCorrectedSignal: meanCorrected,
@@ -198,12 +206,15 @@ const dropletStatistics: DropletStatistics = {
   maxCorrectedSignal: Math.max(...correctedValues),
   standardDeviation: correctedDeviation,
   rsd: (correctedDeviation / meanCorrected) * 100,
-  meanBottom:
-    dropletMeasurements.reduce((sum, measurement) => sum + measurement.bottomLevel, 0) /
+  meanHigh:
+    dropletMeasurements.reduce((sum, measurement) => sum + measurement.highLevel, 0) /
     dropletMeasurements.length,
-  meanPlatformReference:
-    dropletMeasurements.reduce((sum, measurement) => sum + measurement.platformReference, 0) /
+  meanBaseline:
+    dropletMeasurements.reduce((sum, measurement) => sum + measurement.baselineReference, 0) /
     dropletMeasurements.length,
+  meanLength,
+  lengthStandardDeviation: lengthDeviation,
+  lengthRsd: lengthDeviation / meanLength * 100,
   interpolatedCount: dropletMeasurements.filter((measurement) => measurement.referenceMode === "interpolated").length,
   singleSidedCount: dropletMeasurements.filter((measurement) => measurement.referenceMode !== "interpolated").length,
   lowConfidenceCount: dropletMeasurements.filter((measurement) => measurement.confidence < 0.5).length,

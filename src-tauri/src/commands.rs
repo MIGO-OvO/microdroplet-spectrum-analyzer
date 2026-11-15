@@ -107,33 +107,6 @@ pub async fn analyze_signal(
 }
 
 #[tauri::command]
-pub async fn suggest_plateau_parameters(
-    state: State<'_, AppState>,
-    request: SuggestionRequest,
-) -> Result<ParameterSuggestion, String> {
-    let dataset = {
-        let session = state
-            .session
-            .lock()
-            .map_err(|_| "数据会话已损坏，请重新启动应用。".to_owned())?;
-        session
-            .dataset
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "请先加载数据文件。".to_owned())?
-    };
-    let (start, end) = analyzer::selected_range(&dataset, request.x_range.as_ref())?;
-    tauri::async_runtime::spawn_blocking(move || {
-        analyzer::suggest_plateau_parameters(&dataset.signal[start..end], &request.preprocess)
-    })
-    .await
-    .map_err(join_error)
-}
-
-/// Separate suggestion entry point: the droplet derivation is driven by the
-/// two-state separation and the stable-run lengths, so it cannot reuse the
-/// baseline + positive-platform heuristics of the plateau mode.
-#[tauri::command]
 pub async fn suggest_droplet_parameters(
     state: State<'_, AppState>,
     request: SuggestionRequest,
@@ -175,6 +148,32 @@ pub async fn export_results(
     let path = request.path;
     let export_path = path.clone();
     tauri::async_runtime::spawn_blocking(move || export::export_results(&result, &export_path))
+        .await
+        .map_err(join_error)??;
+    Ok(ExportResponse { path })
+}
+
+#[tauri::command]
+pub async fn export_waveform(
+    state: State<'_, AppState>,
+    request: ExportRequest,
+    result_id: u64,
+) -> Result<ExportResponse, String> {
+    let result = {
+        let session = state
+            .session
+            .lock()
+            .map_err(|_| "数据会话已损坏，请重新启动应用。".to_owned())?;
+        session
+            .last_result
+            .as_ref()
+            .filter(|result| result.result_id == result_id)
+            .cloned()
+            .ok_or_else(|| "分析结果已更新，请使用当前结果重新导出波形。".to_owned())?
+    };
+    let path = request.path;
+    let export_path = path.clone();
+    tauri::async_runtime::spawn_blocking(move || export::export_waveform(&result, &export_path))
         .await
         .map_err(join_error)??;
     Ok(ExportResponse { path })

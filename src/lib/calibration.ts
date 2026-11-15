@@ -11,6 +11,8 @@ export interface CalibrationPoint {
   source: string;
   capturedAt: string;
   parameters: AnalysisRequest | null;
+  /** Missing on older files: preserve legacy low-centered Δ, never relabel it. */
+  responseDefinition?: "highMinusLowBaselineV1";
 }
 export interface CalibrationCurve {
   id: string;
@@ -87,13 +89,74 @@ export function correctedResponse(point: Pick<CalibrationPoint, "response" | "ba
 export function analysisResponse(result: AnalysisResponse | null): number | null {
   return result?.mode === "droplet" ? result.dropletStatistics.meanCorrectedSignal : result?.statistics.meanHeight ?? null;
 }
+export type ResponseDefinition = "plateauHeight" | "highMinusLowBaselineV1" | "legacyLowCenteredDelta";
+export const MODE_LABELS: Record<AnalysisResponse["mode"], string> = {
+  plateau: "平台检测", droplet: "液滴双电平分析",
+};
+export const RESPONSE_DEFINITION_LABELS: Record<ResponseDefinition, string> = {
+  plateauHeight: "平台平均高度", highMinusLowBaselineV1: "高平台 − 低平台基线 Δ", legacyLowCenteredDelta: "旧版低平台中心 Δ",
+};
+/** Response definition that a freshly analysed result follows, decided by its mode. */
+export function responseDefinitionForMode(mode: AnalysisResponse["mode"]): ResponseDefinition {
+  return mode === "droplet" ? "highMinusLowBaselineV1" : "plateauHeight";
+}
 export function calibrationMode(curve: CalibrationCurve) {
   const modes = new Set(curve.points.map(p => p.parameters?.mode ?? "plateau"));
   if (modes.size > 1) throw new Error("同一曲线不能混用平台高度与双平台校正差 Δ，请分别建立曲线。");
   return modes.values().next().value ?? "plateau";
 }
+export function calibrationDefinition(curve: CalibrationCurve): ResponseDefinition {
+  const definitions = new Set(curve.points.map(p => p.parameters?.mode === "droplet"
+    ? p.responseDefinition ?? "legacyLowCenteredDelta" : "plateauHeight"));
+  if (definitions.size > 1) throw new Error("曲线混有不同响应定义；旧版低平台中心 Δ 与新版高平台减低基线 Δ 不能混用，请重新建曲线。");
+  return definitions.values().next().value ?? "plateauHeight";
+}
+/**
+ * Guard for *building* a curve. Fitting one regression over two different response
+ * definitions would silently produce a meaningless equation, so capture and fitting
+ * stay strict. Reading a concentration out of an existing curve is a separate path
+ * (see `sampleLookup`) and is never blocked by the analysis mode.
+ */
+export function assertCalibrationCompatible(curve: CalibrationCurve, mode: AnalysisResponse["mode"]) {
+  if (!curve.points.length) return;
+  const curveMode = calibrationMode(curve);
+  if (curveMode !== mode) throw new Error(`这条曲线由「${MODE_LABELS[curveMode]}」的标定点建立；把「${MODE_LABELS[mode]}」的响应加进去会让两种测量定义混在同一回归里。只想快速估算浓度请用“样品浓度反算”；要建这类曲线请先新建曲线。`);
+  const expected = responseDefinitionForMode(mode);
+  if (calibrationDefinition(curve) !== expected) throw new Error("此曲线使用旧版低平台中心 Δ，不能用于新版高平台减低基线 Δ。旧数据已保留，请重新分析标准样品并新建曲线。");
+}
+export interface SampleLookup {
+  response: number;
+  /** Definition the saved curve was fitted on. */
+  curveDefinition: ResponseDefinition;
+  /** Definition the substituted response follows. */
+  sampleDefinition: ResponseDefinition;
+  matched: boolean;
+  /** Non-blocking operator notes; empty when both definitions agree. */
+  notices: string[];
+}
+/**
+ * Substitution of one analysed response into a saved curve, for a quick reading.
+ *
+ * The analysis mode is deliberately not required to match. The value is always
+ * computed, but when the curve and the sample follow different response definitions
+ * the caller gets a notice instead of an exception, so the number is never presented
+ * as an unnoticed mix-up.
+ */
+export function sampleLookup(
+  curve: CalibrationCurve, response: number, mode: AnalysisResponse["mode"],
+): SampleLookup {
+  if (!Number.isFinite(response)) throw new Error("当前分析没有可用的平均响应，无法反算浓度。");
+  const curveDefinition = calibrationDefinition(curve);
+  const sampleDefinition = responseDefinitionForMode(mode);
+  const matched = curveDefinition === sampleDefinition;
+  return {
+    response, curveDefinition, sampleDefinition, matched,
+    notices: matched ? [] : [`曲线按「${RESPONSE_DEFINITION_LABELS[curveDefinition]}」建立，本次数据为「${RESPONSE_DEFINITION_LABELS[sampleDefinition]}」。已按当前响应代入计算，但两者定义不同，浓度仅作快速参考，不能直接作为定量结论。`],
+  };
+}
 export function fitCalibration(curve: CalibrationCurve) {
   calibrationMode(curve);
+  calibrationDefinition(curve);
   const points = curve.points.map(p => ({ ...p, capturedResponse: p.response, baseline: p.baseline ?? 0, response: correctedResponse(p) }));
   const n = points.length;
   if (n < 2) throw new Error("至少添加两个不同浓度的标定点才能拟合。");
@@ -180,6 +243,7 @@ export function parseLibrary(text: string, allowIncompleteDraftName = false): Ca
       if (!p || typeof p.id !== "string" || pointIds.has(p.id) || !Number.isFinite(p.concentration) || p.concentration < 0
         || !Number.isFinite(p.response) || !Number.isFinite(p.weight) || p.weight <= 0
         || (p.baseline !== undefined && !Number.isFinite(p.baseline))
+        || (p.responseDefinition !== undefined && (p.responseDefinition !== "highMinusLowBaselineV1" || p.parameters?.mode !== "droplet"))
         || typeof p.source !== "string" || typeof p.capturedAt !== "string"
         || !(p.parameters === null || (["plateau", "droplet"].includes(p.parameters?.mode) && p.parameters.preprocess && p.parameters.plateau
           && (p.parameters.mode !== "droplet" || p.parameters.droplet)))) {

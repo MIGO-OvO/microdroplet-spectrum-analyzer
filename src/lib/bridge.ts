@@ -41,23 +41,6 @@ export function runAnalysis(request: AnalysisRequest): Promise<AnalysisResponse>
   return invoke<AnalysisResponse>("analyze_signal", { request });
 }
 
-export function suggestParameters(
-  preprocess: PreprocessParams,
-  xRange?: AnalysisRequest["xRange"],
-): Promise<ParameterSuggestion> {
-  return invoke<ParameterSuggestion>("suggest_plateau_parameters", {
-    request: { preprocess, xRange },
-  });
-}
-
-/**
- * Droplet parameter suggestion.
- *
- * A separate command on purpose: the plateau heuristic models a baseline plus an
- * elevated plateau, which is a different problem from telling two *levels* apart.
- * The backend answers `ok: false` when the two states cannot be separated instead
- * of returning plausible-looking numbers.
- */
 export function suggestDropletParameters(
   preprocess: PreprocessParams,
   xRange?: AnalysisRequest["xRange"],
@@ -88,6 +71,18 @@ export async function chooseChartPath(fileName: string): Promise<string | null> 
       { name: "SVG 矢量图", extensions: ["svg"] },
     ],
   });
+}
+
+export async function chooseWaveformPath(fileName: string): Promise<string | null> {
+  return save({
+    title: "导出处理后波形",
+    defaultPath: `${safeStem(fileName)}_processed.csv`,
+    filters: [{ name: "CSV 波形数据", extensions: ["csv"] }],
+  });
+}
+
+export function exportWaveform(path: string, resultId: number): Promise<{ path: string }> {
+  return invoke("export_waveform", { request: { path }, resultId });
 }
 
 export function exportResults(path: string): Promise<{ path: string }> {

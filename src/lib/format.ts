@@ -66,24 +66,24 @@ export function errorMessage(error: unknown): string {
  * the table, the tooltip, the summary and the chart all say the same thing.
  */
 const SEGMENT_KIND_LABELS: Record<SegmentKind, string> = {
-  platform: "Platform（高电平）",
-  bottom: "Bottom（低电平）",
-  unknown: "Unknown（未分类）",
+  platform: "高平台（测量对象）",
+  bottom: "低平台（基线来源）",
+  unknown: "未分类区段",
 };
 
 const REFERENCE_MODE_LABELS: Record<ReferenceMode, string> = {
-  interpolated: "双侧插值",
-  leftOnly: "仅左侧平台",
-  rightOnly: "仅右侧平台",
+  interpolated: "双侧低平台插值",
+  leftOnly: "仅左低平台（未插值）",
+  rightOnly: "仅右低平台（未插值）",
   none: "无参考",
 };
 
 const QUALITY_FLAG_LABELS: Record<QualityFlag, string> = {
-  lowClassificationConfidence: "分类置信度偏低",
+  lowClassificationConfidence: "规则评分偏低",
   singleSidedReference: "单侧参考",
   largeReferenceGap: "参考间隔过大",
-  noisyBottom: "Bottom 噪声偏高",
-  noisyPlatform: "Platform 噪声偏高",
+  noisyBottom: "低平台噪声偏高",
+  noisyPlatform: "高平台噪声偏高",
   nearbyUnknownSegment: "参考区间含未分类段",
   indexTimeFallback: "改用序号插值",
 };
@@ -99,4 +99,3 @@ export function formatReferenceMode(mode: ReferenceMode): string {
 export function formatQualityFlag(flag: QualityFlag): string {
   return QUALITY_FLAG_LABELS[flag] ?? flag;
 }
-

@@ -14,7 +14,9 @@ colors:
   blue-strong: "#0e6983"
   cyan: "#2bc4f7"
   green: "#24866a"
+  green-ink: "#18684f"
   amber: "#b67216"
+  amber-ink: "#7b4e12"
   amber-surface: "#fff4df"
   chart-amber: "#d69027"
   red: "#bd4747"
@@ -23,35 +25,38 @@ colors:
   chart-grid: "#e4eaee"
 typography:
   brand:
-    fontFamily: "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, PingFang SC, sans-serif"
-    fontSize: "16px"
-    fontWeight: 680
-    letterSpacing: "-0.015em"
+    fontFamily: "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, PingFang SC, Noto Sans CJK SC, sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 700
   metric:
     fontFamily: "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, PingFang SC, sans-serif"
-    fontSize: "17px"
-    fontWeight: 650
+    fontSize: "1.375rem"
+    fontWeight: 600
   section-title:
     fontFamily: "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, PingFang SC, sans-serif"
-    fontSize: "13px"
-    fontWeight: 680
-    letterSpacing: "-0.01em"
+    fontSize: "1rem"
+    fontWeight: 700
   body:
     fontFamily: "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, PingFang SC, sans-serif"
-    fontSize: "12px"
+    fontSize: "1rem"
     fontWeight: 400
+    lineHeight: 1.6
   control:
     fontFamily: "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, PingFang SC, sans-serif"
-    fontSize: "12px"
-    fontWeight: 620
-    lineHeight: 1
+    fontSize: "0.875rem"
+    fontWeight: 600
+    lineHeight: 1.4
+  dialog-title:
+    fontFamily: "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, PingFang SC, sans-serif"
+    fontSize: "1.125rem"
+    fontWeight: 700
   caption:
     fontFamily: "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, PingFang SC, sans-serif"
-    fontSize: "10px"
+    fontSize: "0.8125rem"
     fontWeight: 400
   axis:
-    fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace"
-    fontSize: "11px"
+    fontFamily: "Consolas, Microsoft YaHei UI, monospace"
+    fontSize: "0.8125rem"
     fontWeight: 400
 rounded:
   field: "4px"
@@ -148,7 +153,7 @@ components:
 
 系统服务于同屏复核：左侧参数、中央主图、右侧统计与检测台账、底部结果表来自同一次分析。蓝色负责操作与处理后信号，青色只留在紧凑液滴标志中，琥珀标记阈值与待更新状态，绿色确认检测和同步；状态始终同时用文字或图标表达。
 
-系统明确拒绝装饰性的液滴或工序导航侧栏，也不把品牌图形扩展为背景纹样；液滴 Logo 仅作为顶部命令栏中的紧凑品牌标志。功能侧栏使用 100px 紧凑文本导航切换“数据处理 / 工作曲线”，选中态使用浅科学蓝与边框；880px 以下改为顶部横向导航。
+系统明确拒绝装饰性的液滴或工序导航侧栏，也不把品牌图形扩展为背景纹样；液滴 Logo 仅作为顶部命令栏中的紧凑品牌标志。功能侧栏使用 100px 紧凑文本导航切换“数据处理 / 工作曲线 / 历史记录”，选中态使用浅科学蓝与边框；880px 以下改为顶部横向导航。
 
 **Key Characteristics:**
 
@@ -197,36 +202,38 @@ components:
 
 **The Semantic Pairing Rule.** 绿色、琥珀和红色永远与文字、图标、线型或区域形状共同表达状态，不单独依赖色相。
 
+状态文字使用深绿色 `green-ink` 或深琥珀色 `amber-ink`，在白底上分别达到 6.71:1 和 7.14:1 的对比度；图标与图表仍使用原有状态色。
+
 ## Typography
 
 **Display Font:** 不使用展示字体；该操作界面刻意避免海报式大标题。
-**Body Font:** Segoe UI Variable Text，依次回退到 Segoe UI、Microsoft YaHei UI、PingFang SC 和 sans-serif。
-**Label/Mono Font:** 坐标轴使用 ui-monospace，依次回退到 SFMono-Regular、Consolas 和 monospace；其他数值使用正文栈配合等宽数字。
+**Body Font:** 使用本机字体，依次选择 Segoe UI Variable Text、Segoe UI、Microsoft YaHei UI、Microsoft YaHei、PingFang SC、Noto Sans CJK SC 和 sans-serif。中文由微软雅黑等中文字体承载，离线运行不加载网络字体。
+**Label/Mono Font:** 坐标刻度使用 Consolas，并回退到 Microsoft YaHei UI 和 monospace；其他数值使用正文栈配合等宽数字。图内平台编号、轴标题与界面共用字体。
 
-**Character:** 字体体系像 Windows 科学仪器软件一样清晰、直接、熟悉。层级集中在 10–17px，并用字重、冷灰层级和等宽数字区分证据，而不是依赖夸张字号。
+**Character:** 以长时间复核实验数据时的阅读性为准。字号使用 rem，默认根字号为 16px；中文保持正常字距，数值保留对齐所需的等宽数字。
 
 ### Hierarchy
 
-- **Metric**（650，17px）：统计概览中的主要读数，是界面最大的持续数据字体。
-- **Brand**（680，16px，字距 -0.015em）：顶部中文产品名；英文副标题降到 10px。
-- **Section Title**（680，13px，字距 -0.01em）：面板、主图、统计和结果表标题。
-- **Body / Control**（400–620，12px）：参数标签、说明、字段、按钮和状态正文；按钮行高为 1。
-- **Caption**（400–650，10–11px）：图例、文件元数据、提示、徽章和台账次级信息。
-- **Axis**（400，11px）：Canvas 坐标刻度，使用等宽字体栈以稳定数字宽度。
+- **Metric**（600，1.375rem / 22px）：统计概览的主要读数。
+- **Brand**（700，1.25rem / 20px）：顶部中文产品名；英文副标题为 13px。
+- **Dialog Title**（700，1.125rem / 18px）：列选择等弹窗的标题。
+- **Section Title / Body**（400 或 700，1rem / 16px）：正文、面板标题和台账的校正信号；默认行高 1.6。
+- **Control / Data**（400 或 600，0.875rem / 14px）：参数标签与输入、按钮、计算警示、结果表、质量标记和面板说明；表格行高至少 38px。
+- **Caption / Axis**（400 或 600，0.8125rem / 13px）：图例、元数据、次级台账、状态栏、图内编号和坐标刻度。图内文字读取 Canvas 的计算字体，跟随界面字号。
 
 ### Named Rules
 
-**The Compact Evidence Rule.** 持续界面层级保持在 10–17px；不引入展示级标题来挤压信号和结果空间。
+**The Readable Evidence Rule.** 辅助文字至少 13px，操作与表格为 14px，正文为 16px。字号增大时允许说明换行、面板滚动和表格横向滚动，完整显示编号、数值与质量标记。
 
-**The Tabular Evidence Rule.** 测量值、点数、统计量和表格单元格使用 `font-variant-numeric: tabular-nums`；Canvas 刻度使用 11px 等宽字体。
+**The Tabular Evidence Rule.** 测量值、点数、统计量和表格单元格使用 `font-variant-numeric: tabular-nums`；Canvas 刻度使用 13px 等宽字体。
 
 ## Layout
 
-桌面壳为满高纵向布局。顶部命令栏最小高度为 62px，底部持久状态栏最小高度为 27px；中间区域使用 8px 外边距和 8px 间隙。工作区上层采用三列：左参数列 `minmax(246px, 0.76fr)`，中央主图 `minmax(500px, 2.65fr)`，右复核列 `minmax(230px, 0.72fr)`。下层结果表为 `minmax(178px, 25vh)`，上层工作区为 `minmax(390px, 1fr)`。
+桌面壳为满高纵向布局。顶部命令栏最小高度为 62px，底部持久状态栏最小高度为 32px；中间区域使用 8px 外边距和 8px 间隙。工作区上层采用三列：左参数列 `minmax(300px, 0.76fr)`，中央主图 `minmax(440px, 2.65fr)`，右复核列 `minmax(300px, 0.8fr)`。下层结果表为 `minmax(178px, 25vh)`，上层工作区为 `minmax(390px, 1fr)`。
 
-参数列是功能面板，不是导航。主图始终是最大区域；右栏只保留统计、状态和前十二项检测台账，完整证据落入底部可滚动表。标题栏、表头和面板内边距主要落在 8–16px，31–45px 的紧凑行高维持科研数据密度。
+主图始终是最大区域；右栏保留统计、状态和前十二项检测台账，完整证据落入底部可滚动表。输入框至少 36px，表格行至少 38px，台账行至少 58px。台账编号按内容分配宽度，参考方式可换行。
 
-在 1180px 及以下，工作区改为 250px 参数列加弹性主图，统计栏移到两列下方并形成三段横排，工作区允许滚动以容纳浓度工具栏；在 880px 及以下，页面允许纵向滚动，主图固定为第一段 500px 高，参数与统计顺序堆叠，结果表高 330px。命令栏也重排，但文件状态、模式和操作仍全部可见。
+在 1320px 及以下，工作区首行固定为 440px，采用 300px 参数列加弹性主图，统计栏移到两列下方，最高 280px 并可滚动；在 880px 及以下，页面允许纵向滚动，主图固定为第一段 500px 高，参数与统计顺序堆叠，结果表高 330px。命令栏也重排，文件状态和操作保留。图例在主图标题下方独立换行。
 
 **The Chart-Dominance Rule.** 任何响应式重排都先保留主图的检查空间，再移动统计栏或堆叠参数；不得用装饰区占用中央证据区。
 
@@ -264,7 +271,7 @@ components:
 - **Composition:** 62px 最小高度的白色命令栏，依次容纳 38px Logo/双语品牌、可截断文件状态、加载与运行操作。
 - **Brand:** 液滴 Logo 只在此处出现；不生成液滴导航项、流程节点或背景水印。
 - **Priority:** “运行分析”是右上唯一科学蓝主操作；“加载数据”保持白底描边。
-- **Not here:** 分析模式（平台检测／液滴双电平分析）是参数而非导航，因此放在参数面板顶部的“分析模式”分组中，命令栏不重复承载它。
+- **Detection:** 数据处理只提供双平台检测；参数面板中的识别方式切换手动高低幅度窗口与自动稳定段分类。图中四条幅度边界线与标签支持拖动，松开后同步侧栏参数，键盘可微调。
 
 ### Buttons
 
@@ -278,7 +285,7 @@ components:
 - **Scope switch（功能侧栏）:** 1px 细边框、6px 外圆角和 3px 内边距；两个 31px 高选项使用 4px 圆角。
 - **State:** 未选项透明且为次级石墨，当前项为白底、深科学蓝字、650 字重和选中段阴影；`aria-pressed` 保留语义。
 - **Analysis mode（参数面板）:** 两个纵向卡片各 8px 内边距、7px 外圆角，上行 12px/640 模式名、下行 10px 说明；未选项为轻冷白底加结构边框，当前项为浅蓝强调面、科学蓝边框和 3px 内嵌强调条，`role="radiogroup"` + `aria-checked` 保留语义。
-- **Naming:** 模式名使用“平台检测”与“液滴双电平分析”，与结果表、图表图例和导出表头保持一致的中文术语。
+- **Naming:** 当前检测统一称为“双平台检测”；旧历史记录和曲线保留原模式与响应定义。
 
 ### Inputs & Switches
 
@@ -300,8 +307,9 @@ components:
 - **Frame:** 白底、冷灰网格、11px 等宽刻度；标题栏和帮助栏各用细分隔线封边。
 - **Interaction:** 十字光标悬停读数，滚轮缩放、拖动平移、双击或按 0 重置，并提供可聚焦 Canvas 与可见工具按钮。
 - **Markers（平台模式）:** 检测点为 4.5px 半径绿色圆点、2px 白描边；可选标签用 10px 半粗体和半透明白底。
-- **Markers（液滴模式）:** 稳定区段电平按分类着色——Platform 为 6px 绿色方块、Bottom 为 4px 科学蓝圆点、Unknown 为 3.6px 琥珀圆点；`Unknown` 使用第三种颜色是刻意的，它正是需要人工复核的段落。校正信号 Δ 用 1.4px 梅红竖线连接 Platform Reference 与 Bottom 电平，并在参考端加 3px 实心圆点。
-- **Hover（液滴模式）:** 仅在被指向的液滴上绘制参考构造——左右 Platform 电平虚线、Platform Reference 虚线与连接段；提示框追加液滴编号、Bottom、左右 Platform、Platform Reference、Corrected ΔSignal、参考方式、置信度与质量标记。
+- **Markers（液滴模式）:** 高平台 H 为绿色方块、低平台 L 为科学蓝圆点、未分类 U 为琥珀圆点，后缀沿用后端时序区段编号。水平线表示区段范围。校正信号 Δ 用梅红竖线连接高平台实测值与其中心处的低平台基线。
+- **Review（液滴模式）:** 点击图或表中区段编号后定位并高亮；选中高平台或悬停时，用虚线连接实际左右低平台中心和基线计算点，单侧参考画水平构造线并明确“未插值”。右栏给出区段范围、左右低平台 ID、电平、基线位置、Δ 算式与质量标记；选择低平台可反查其服务的高平台。评分标明“规则评分，非准确率”。
+- **Identity text:** 区段编号按钮使用加深后的语义文字色：H `#17654f`、L `#155ca8`、U `#86550f`，保证浅色按钮上的小字号可读性；身份始终同时用字母与类型文字表达，不只依赖颜色。
 - **Amplitude window:** 只有平台模式绘制幅度上下限虚线与范围带；液滴模式不设置该范围，纵轴只框住数据本身。
 
 ### Statistics & Feature Ledger
@@ -309,14 +317,14 @@ components:
 - **Metrics:** 两列细线网格，每格 9px 内边距；10px 标签配科学蓝图标，17px/650 读数承担主层级。
 - **States:** 处理中、待更新、已同步分别使用蓝、琥珀、绿，但始终附带图标和文字。
 - **Ledger:** 每行最小高度 43px，圆形编号、主值、次级高度/长度和确认图标对齐；右栏只展示前十二项。
-- **Droplet metrics:** 液滴模式把四个读数替换为液滴数量、平均校正信号 Δ、RSD 与校正信号标准差，并在网格下方用同一事实表样式追加平均 Bottom 电平、平均 Platform Reference、双侧插值/单侧参考数量、低置信度液滴数与未分类稳定区段数；台账每行主值为 `Δ …`，次行为中心位置与参考方式。
+- **Droplet metrics:** 显示高平台测量数、平均校正信号 Δ、RSD、标准差，以及检测高/低平台数、未形成测量的高平台数、平均高平台电平、平均低基线、双侧/单侧数量、低评分及未分类数。台账使用可点击 H 编号，质量标记非空时显示复核警告而非统一绿色确认。
 
 ### Results Table
 
 - **Density:** 表格最小宽度 780px，单元格高 31px、内边距 5px 12px、字号 11px，数值右对齐并使用等宽数字。
 - **Header:** `#f2f5f6` 冷灰粘性表头，650 字重；行号居中且使用深科学蓝。
 - **State:** 行悬停使用 `#f1f8fa`，空状态用图标和明确文字；横向滚动容器可通过键盘聚焦。
-- **Droplet schema:** 液滴模式改列“液滴 #/中心位置/Bottom 电平/左 Platform/右 Platform/Platform Reference/Corrected ΔSignal/参考方式/置信度/质量标记”，缺失的单侧参考显示 `—`，`Corrected ΔSignal` 使用深科学蓝 640 字重突出；同一分析结果下方以折叠区提供“稳定区段证据”表（前 200 段），完整证据写在 Excel“稳定区段”工作表。
+- **Droplet schema:** “高平台测量”与“全部检测区段”两个视图，每页 100 项。测量表显示 H 编号、高平台实测值、左右 L 编号及电平、低平台基线、Δ、基线方式、规则评分和质量标记；证据表显示全量区段、用途及实际横坐标，包含未配对/未使用项。缺失参考写“无 / —”，不伪装为零。编号选择联动主图和右栏；Excel 使用相同编号。
 
 ### Column Selection Dialog
 

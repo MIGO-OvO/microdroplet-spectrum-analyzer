@@ -1,10 +1,11 @@
+/** Plateau identifies saved results and calibration points; new analyses use droplet. */
 export type AnalysisMode = "plateau" | "droplet";
 export type FilterMode = "clip_smooth" | "median_smooth";
 
 /** Whether a stable segment is the upper state, the lower state, or unassigned. */
 export type SegmentKind = "unknown" | "platform" | "bottom";
 
-/** How `platformReference` was obtained for one droplet. */
+/** How `baselineReference` was obtained for one droplet. */
 export type ReferenceMode = "interpolated" | "leftOnly" | "rightOnly" | "none";
 
 /**
@@ -126,18 +127,18 @@ export interface StableSegment {
   confidence: number;
 }
 
-/** One droplet: a Bottom segment plus its locally interpolated Platform reference. */
+/** One droplet: a high segment minus the low baseline at its own center. */
 export interface DropletMeasurement {
   number: number;
-  bottomSegment: number;
-  leftPlatformSegment: number | null;
-  rightPlatformSegment: number | null;
+  highSegment: number;
+  leftLowSegment: number | null;
+  rightLowSegment: number | null;
   centerIndex: number;
   center: number;
-  bottomLevel: number;
-  leftPlatformLevel: number | null;
-  rightPlatformLevel: number | null;
-  platformReference: number;
+  highLevel: number;
+  leftLowLevel: number | null;
+  rightLowLevel: number | null;
+  baselineReference: number;
   correctedSignal: number;
   referenceMode: ReferenceMode;
   confidence: number;
@@ -151,8 +152,12 @@ export interface DropletStatistics {
   maxCorrectedSignal: number | null;
   standardDeviation: number | null;
   rsd: number | null;
-  meanBottom: number | null;
-  meanPlatformReference: number | null;
+  meanHigh: number | null;
+  meanBaseline: number | null;
+  /** Full detected high-platform lengths, in samples, including unpaired highs. */
+  meanLength: number | null;
+  lengthStandardDeviation: number | null;
+  lengthRsd: number | null;
   interpolatedCount: number;
   singleSidedCount: number;
   lowConfidenceCount: number;
@@ -197,7 +202,7 @@ export interface ParameterSuggestion {
 }
 
 export const DEFAULT_REQUEST: AnalysisRequest = {
-  mode: "plateau",
+  mode: "droplet",
   preprocess: {
     filterMode: "clip_smooth",
     medianWindow: 5,
@@ -228,3 +233,15 @@ export const DEFAULT_REQUEST: AnalysisRequest = {
     referenceGapFactor: 3,
   },
 };
+
+/** Restore parameters for a new run without changing the saved record or curve. */
+export function currentAnalysisRequest(saved: AnalysisRequest): AnalysisRequest {
+  const request = structuredClone(saved);
+  return {
+    ...request,
+    mode: "droplet",
+    preprocess: { ...DEFAULT_REQUEST.preprocess, ...request.preprocess },
+    plateau: { ...DEFAULT_REQUEST.plateau, ...request.plateau },
+    droplet: { ...DEFAULT_REQUEST.droplet, ...request.droplet },
+  };
+}

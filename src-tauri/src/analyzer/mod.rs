@@ -1,45 +1,31 @@
-//! Signal analysis entry points and the mode dispatch.
-//!
-//! ```text
-//! analyze_dataset()
-//!   ├── Plateau → amplitude-window region detection (legacy, unchanged)
-//!   └── Droplet → detection signal → stable segments → raw level estimation
-//!                 → two-state classification → sequence regularisation
-//!                 → platform association → local interpolation → corrected Δ
-//! ```
-//!
-//! The dispatch is deliberately flat: each mode owns its own module, and the only
-//! shared pieces are preprocessing, robust statistics and preview decimation.
+//! Dual-platform detection, raw level measurement and local baseline correction.
 
 mod droplet;
-mod plateau;
 mod preprocess;
 mod robust;
 
 use std::sync::Arc;
 
 use crate::models::{
-    AnalysisMode, AnalysisRequest, AnalysisResponse, AnalysisStatistics, Dataset, DetectionKey,
+    AnalysisMode, AnalysisRequest, AnalysisResponse, AnalysisStatistics, Dataset,
     FullAnalysisResult, PlotSeries, PreprocessCache,
 };
 
 pub use droplet::suggest_droplet_parameters;
-pub use plateau::{normalize_plateau_params, suggest_plateau_parameters};
-pub use preprocess::{normalize_preprocess_params, preprocess_signal};
+pub use preprocess::normalize_preprocess_params;
 
 use droplet::{
     build_detection_signal, droplet_detection_key, normalize_droplet_params, run_droplet,
 };
-use plateau::{detect_plateaus, plateau_statistics};
 
 const MAX_PREVIEW_POINTS: usize = 12_000;
 
 pub fn normalize_request(request: &AnalysisRequest) -> AnalysisRequest {
     AnalysisRequest {
         x_range: request.x_range.clone(),
-        mode: request.mode,
+        mode: AnalysisMode::Droplet,
         preprocess: normalize_preprocess_params(&request.preprocess),
-        plateau: normalize_plateau_params(&request.plateau),
+        plateau: request.plateau.clone(),
         droplet: normalize_droplet_params(&request.droplet),
     }
 }
@@ -85,8 +71,7 @@ pub fn selected_range(
 
 pub fn validate_request(dataset: &Dataset, request: &AnalysisRequest) -> Result<(), String> {
     selected_range(dataset, request.x_range.as_ref())?;
-    if request.mode == AnalysisMode::Droplet
-        && let Some(b) = &request.droplet.amplitude_bands
+    if let Some(b) = &request.droplet.amplitude_bands
         && (![b.low_min, b.low_max, b.high_min, b.high_max]
             .iter()
             .all(|v| v.is_finite())
@@ -114,10 +99,7 @@ pub fn analyze_dataset(
     // Command validation rejects invalid input; direct callers receive an empty result below.
     let validation = validate_request(dataset, &request);
     let (start, end) = selected_range(dataset, request.x_range.as_ref()).unwrap_or((0, 0));
-    let detection_key = match request.mode {
-        AnalysisMode::Plateau => DetectionKey::Plateau,
-        AnalysisMode::Droplet => droplet_detection_key(&request.droplet),
-    };
+    let detection_key = droplet_detection_key(&request.droplet);
 
     let (processed, noise, scale, used_cached_preprocess) = match cache {
         Some(cache)
@@ -128,30 +110,19 @@ pub fn analyze_dataset(
         {
             (Arc::clone(&cache.values), cache.noise, cache.scale, true)
         }
-        _ => match request.mode {
-            AnalysisMode::Plateau => (
-                Arc::new(preprocess_signal(
-                    &dataset.signal[start..end],
-                    &request.preprocess,
-                )),
-                0.0,
-                0.0,
+        _ => {
+            let detection = build_detection_signal(
+                &dataset.signal[start..end],
+                &request.preprocess,
+                &request.droplet,
+            );
+            (
+                Arc::new(detection.values),
+                detection.noise,
+                detection.scale,
                 false,
-            ),
-            AnalysisMode::Droplet => {
-                let detection = build_detection_signal(
-                    &dataset.signal[start..end],
-                    &request.preprocess,
-                    &request.droplet,
-                );
-                (
-                    Arc::new(detection.values),
-                    detection.noise,
-                    detection.scale,
-                    false,
-                )
-            }
-        },
+            )
+        }
     };
 
     let x = dataset.time.as_ref().map_or_else(
@@ -178,36 +149,24 @@ pub fn analyze_dataset(
     if let Err(message) = validation {
         result.warnings.push(message);
     } else {
-        match result.request.mode {
-            AnalysisMode::Plateau => {
-                result.plateau_features =
-                    detect_plateaus(&processed, &result.x, &result.request.plateau);
-                result.statistics = plateau_statistics(&result.plateau_features);
-            }
-            AnalysisMode::Droplet => {
-                let smooth_half = (result.request.preprocess.smooth_window / 2).max(1);
-                let analysis = run_droplet(
-                    &dataset.signal[start..end],
-                    &result.x,
-                    &processed,
-                    noise,
-                    scale,
-                    &result.request.droplet,
-                    result.has_real_time,
-                    smooth_half,
-                );
-                result.stable_segments = analysis.segments;
-                result.droplet_measurements = analysis.measurements;
-                result.droplet_statistics = analysis.statistics;
-                result.warnings = analysis.warnings;
-            }
-        }
+        let smooth_half = (result.request.preprocess.smooth_window / 2).max(1);
+        let analysis = run_droplet(
+            &dataset.signal[start..end],
+            &result.x,
+            &processed,
+            noise,
+            scale,
+            &result.request.droplet,
+            result.has_real_time,
+            smooth_half,
+        );
+        result.stable_segments = analysis.segments;
+        result.droplet_measurements = analysis.measurements;
+        result.droplet_statistics = analysis.statistics;
+        result.warnings = analysis.warnings;
     }
 
     // Keep reported sample indices in the original loaded-file coordinate system.
-    for feature in &mut result.plateau_features {
-        feature.center_index += start;
-    }
     for segment in &mut result.stable_segments {
         segment.start_index += start;
         segment.end_index += start;
@@ -353,7 +312,7 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use crate::models::{AnalysisRequest, FilterMode, PlateauParams, PreprocessParams};
+    use crate::models::{AmplitudeBands, AnalysisRequest, FilterMode, PreprocessParams};
 
     use super::test_support::dataset;
     use super::*;
@@ -379,7 +338,7 @@ mod tests {
         let (result, _) = analyze_dataset(&data, &request, None);
         assert_eq!(
             result.droplet_measurements.len(),
-            3,
+            2,
             "{:?}",
             result.warnings
         );
@@ -414,14 +373,14 @@ mod tests {
         let (reference, _) = analyze_dataset(&isolated, &AnalysisRequest::default(), None);
         assert_eq!(result.processed, reference.processed);
         assert_eq!(
-            result.statistics.mean_height,
-            reference.statistics.mean_height
+            result.droplet_statistics.mean_corrected_signal,
+            reference.droplet_statistics.mean_corrected_signal
         );
         assert_eq!(result.x.first(), Some(&100.0));
         assert_eq!(result.x.last(), Some(&599.0));
         assert_eq!(
-            result.plateau_features[0].center_index,
-            reference.plateau_features[0].center_index + 100
+            result.stable_segments[0].center_index,
+            reference.stable_segments[0].center_index + 100
         );
         let (same, _) = analyze_dataset(&data, &request, Some(&cache));
         assert!(same.used_cached_preprocess);
@@ -529,7 +488,7 @@ mod tests {
             high_max: -0.02,
         });
         let (after, _) = analyze_dataset(&data, &request, Some(&cache));
-        assert_eq!(after.droplet_measurements.len(), 3);
+        assert_eq!(after.droplet_measurements.len(), 2);
         assert!(!after.used_cached_preprocess);
         for (a, b) in before
             .droplet_measurements
@@ -537,7 +496,7 @@ mod tests {
             .zip(&after.droplet_measurements)
         {
             assert!((a.corrected_signal - b.corrected_signal).abs() < 1e-12);
-            assert!((b.bottom_level - 0.005).abs() < 1e-12);
+            assert!((b.high_level - 0.07).abs() < 1e-12);
         }
         request.droplet.amplitude_bands.as_mut().unwrap().high_max = -0.015;
         let (_, updated_cache) = analyze_dataset(&data, &request, None);
@@ -584,7 +543,7 @@ mod tests {
                 let _ = analyze_dataset(&data, &request, Some(&cache));
                 let cached = start.elapsed();
                 let start = std::time::Instant::now();
-                let suggestion = suggest_plateau_parameters(&data.signal, &request.preprocess);
+                let suggestion = suggest_droplet_parameters(&data.signal, &request.preprocess);
                 assert!(suggestion.ok);
                 println!(
                     "points={count} mode={mode:?} analysis={analysis:?} preview={response:?} cached={cached:?} suggestion={:?}",
@@ -621,49 +580,54 @@ mod tests {
                 smooth_window: 5,
                 ..PreprocessParams::default()
             },
-            plateau: PlateauParams {
-                threshold_low: 0.2,
-                threshold_high: 0.7,
-                min_length: 3,
-                max_length: 20,
-                ..PlateauParams::default()
-            },
             ..AnalysisRequest::default()
         };
         let (_, cache) = analyze_dataset(&dataset, &request, None);
         let mut changed = request;
-        changed.plateau.threshold_low = 0.3;
+        changed.droplet.amplitude_bands = Some(AmplitudeBands {
+            low_min: -0.1,
+            low_max: 0.1,
+            high_min: 0.2,
+            high_max: 0.7,
+        });
         let (result, _) = analyze_dataset(&dataset, &changed, Some(&cache));
         assert!(result.used_cached_preprocess);
     }
 
     #[test]
-    fn plateau_results_stay_empty_for_droplet_mode_and_vice_versa() {
+    fn legacy_requests_run_the_current_engine_without_rewriting_saved_parameters() {
         let mut signal = vec![0.0; 200];
         signal.extend(vec![0.3; 100]);
         signal.extend(vec![0.0; 200]);
         let data = dataset(signal);
 
-        let (plateau, _) = analyze_dataset(&data, &AnalysisRequest::default(), None);
-        assert_eq!(plateau.request.mode, AnalysisMode::Plateau);
-        assert!(plateau.droplet_measurements.is_empty());
-        assert_eq!(plateau.droplet_statistics.droplet_count, 0);
-
-        let droplet_request = AnalysisRequest {
-            mode: AnalysisMode::Droplet,
-            preprocess: PreprocessParams {
-                clipping_percentile: 100.0,
-                ..PreprocessParams::default()
-            },
-            ..AnalysisRequest::default()
-        };
-        let (droplet, _) = analyze_dataset(&data, &droplet_request, None);
+        let mut saved = serde_json::to_value(AnalysisRequest::default()).unwrap();
+        saved["mode"] = "plateau".into();
+        saved.as_object_mut().unwrap().remove("droplet");
+        let legacy: AnalysisRequest = serde_json::from_value(saved).unwrap();
+        let (droplet, _) = analyze_dataset(&data, &legacy, None);
+        assert_eq!(legacy.mode, AnalysisMode::Plateau);
+        assert_eq!(droplet.request.mode, AnalysisMode::Droplet);
+        assert!(
+            !droplet.droplet_measurements.is_empty(),
+            "{:?}",
+            droplet.warnings
+        );
         assert!(droplet.plateau_features.is_empty());
         assert_eq!(droplet.statistics.feature_count, 0);
+        let (current, _) = analyze_dataset(&data, &AnalysisRequest::default(), None);
+        assert_eq!(
+            droplet.droplet_statistics.mean_corrected_signal,
+            current.droplet_statistics.mean_corrected_signal
+        );
+        assert_eq!(
+            droplet.droplet_measurements.len(),
+            current.droplet_measurements.len()
+        );
     }
 
     #[test]
-    fn cached_plateau_preprocessing_is_never_reused_for_droplet() {
+    fn legacy_mode_identity_does_not_select_a_different_detection_pipeline() {
         let mut signal = vec![0.0; 400];
         signal.extend(vec![0.3; 200]);
         signal.extend(vec![0.0; 400]);
@@ -676,11 +640,12 @@ mod tests {
             ..AnalysisRequest::default()
         };
         let (_, cache) = analyze_dataset(&data, &request, None);
-        let droplet_request = AnalysisRequest {
-            mode: AnalysisMode::Droplet,
+        let legacy_request = AnalysisRequest {
+            mode: AnalysisMode::Plateau,
             ..request
         };
-        let (result, _) = analyze_dataset(&data, &droplet_request, Some(&cache));
-        assert!(!result.used_cached_preprocess);
+        let (result, _) = analyze_dataset(&data, &legacy_request, Some(&cache));
+        assert!(result.used_cached_preprocess);
+        assert_eq!(result.request.mode, AnalysisMode::Droplet);
     }
 }

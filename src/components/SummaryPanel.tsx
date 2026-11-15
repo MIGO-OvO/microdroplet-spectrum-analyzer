@@ -9,7 +9,9 @@ import {
   Waves,
 } from "lucide-react";
 
-import { formatMeasurement, formatReferenceMode } from "../lib/format";
+import { useMemo } from "react";
+import { formatMeasurement, formatReferenceMode, formatQualityFlag } from "../lib/format";
+import { indexDroplets, segmentId, segmentUse, lowId, SCORE_EXPLANATION } from "../lib/droplet";
 import type { AnalysisResponse } from "../types";
 
 interface SummaryPanelProps {
@@ -17,18 +19,25 @@ interface SummaryPanelProps {
   busy: boolean;
   dirty: boolean;
   status: string;
+  selectedSegment?: number | null;
+  onSelectSegment?: (number: number) => void;
 }
 
 function DropletFacts({ result }: { result: AnalysisResponse }) {
   const statistics = result.dropletStatistics;
   const facts: Array<[string, string]> = [
-    ["平均 Bottom 电平", formatMeasurement(statistics.meanBottom, 6)],
-    ["平均 Platform Reference", formatMeasurement(statistics.meanPlatformReference, 6)],
+    ["检测到的高 / 低平台", `${result.stableSegments.filter(s => s.kind === "platform").length} / ${result.stableSegments.filter(s => s.kind === "bottom").length}`],
+    ["高平台未形成测量", String(result.stableSegments.filter(s => s.kind === "platform").length - statistics.dropletCount)],
+    ["平均高平台实测值", formatMeasurement(statistics.meanHigh, 6)],
+    ["平均低平台基线", formatMeasurement(statistics.meanBaseline, 6)],
+    ["平均高平台长度（点）", formatMeasurement(statistics.meanLength, 4)],
+    ["高平台长度标准差（点）", formatMeasurement(statistics.lengthStandardDeviation, 4)],
+    ["高平台长度 RSD", statistics.lengthRsd == null ? "—" : `${formatMeasurement(statistics.lengthRsd, 2)}%`],
     [
       "双侧插值 / 单侧参考",
       `${statistics.interpolatedCount} / ${statistics.singleSidedCount}`,
     ],
-    ["低置信度液滴", String(statistics.lowConfidenceCount)],
+    ["低规则评分测量", String(statistics.lowConfidenceCount)],
     ["未分类稳定区段", String(statistics.unknownSegmentCount)],
   ];
   return (
@@ -43,13 +52,16 @@ function DropletFacts({ result }: { result: AnalysisResponse }) {
   );
 }
 
-export function SummaryPanel({ result, busy, dirty, status }: SummaryPanelProps) {
-  const droplet = result?.mode === "droplet";
+export function SummaryPanel({ result, busy, dirty, status, selectedSegment, onSelectSegment }: SummaryPanelProps) {
+  const index = useMemo(() => result ? indexDroplets(result) : null, [result]);
+  const selected = index?.segments.get(selectedSegment ?? -1);
+  const measurement = index?.byHigh.get(selectedSegment ?? -1);
+  const droplet = result?.mode !== "plateau";
   const statistics = result?.dropletStatistics;
   const metrics = droplet
     ? [
         {
-          label: "液滴数量",
+          label: "高平台测量数",
           value: result ? String(statistics?.dropletCount ?? 0) : "—",
           icon: Waves,
         },
@@ -98,6 +110,28 @@ export function SummaryPanel({ result, busy, dirty, status }: SummaryPanelProps)
 
   return (
     <aside className="summary-panel" aria-label="分析概览">
+      {droplet && <section className="summary-section segment-inspector" aria-live="polite">
+        <h2>平台与基线关系</h2>
+        {selected && index ? <>
+          <strong>{segmentId(selected.kind, selected.number)} · {segmentUse(selected, index)}</strong>
+          <p>检测范围 {formatMeasurement(selected.start, 4)}–{formatMeasurement(selected.end, 4)} · 原始电平 {formatMeasurement(selected.level, 6)}</p>
+          {measurement ? <>
+            <dl className="file-facts">
+              <div><dt>左低平台</dt><dd>{lowId(measurement.leftLowSegment)} · {formatMeasurement(measurement.leftLowLevel, 6)}</dd></div>
+              <div><dt>右低平台</dt><dd>{lowId(measurement.rightLowSegment)} · {formatMeasurement(measurement.rightLowLevel, 6)}</dd></div>
+              <div><dt>基线计算位置</dt><dd>{formatMeasurement(measurement.center, 4)}（高平台中心）</dd></div>
+              <div><dt>低平台基线</dt><dd>{formatMeasurement(measurement.baselineReference, 6)}</dd></div>
+            </dl>
+            <p className="delta-equation">Δ = {formatMeasurement(measurement.highLevel, 6)} − ({formatMeasurement(measurement.baselineReference, 6)}) = {formatMeasurement(measurement.correctedSignal, 6)}</p>
+            <p>{measurement.qualityFlags.map(formatQualityFlag).join("、") || "无质量标记（不代表已验证）"}</p>
+          </> : selected.kind === "platform" ? <p>未输出 Δ：缺少可用低平台，或单侧参考已禁用。请检查分析范围与参考配对参数。</p> : null}
+          {selected.kind === "bottom" && (index.byLow.get(selected.number) ?? []).map(m => <button
+            key={m.number} type="button" className="segment-link" onClick={() => onSelectSegment?.(m.highSegment)}>
+            查看 H{m.highSegment} · {formatReferenceMode(m.referenceMode)}
+          </button>)}
+        </> : <p>点击图中的平台或下方表格编号，查看检测范围、测量状态及实际基线来源。</p>}
+        <p className="score-note">{SCORE_EXPLANATION}</p>
+      </section>}
       <section className="summary-section metrics-section">
         <div className="summary-heading">
           <h2>统计概览</h2>
@@ -153,7 +187,7 @@ export function SummaryPanel({ result, busy, dirty, status }: SummaryPanelProps)
 
       <section className="summary-section detected-section">
         <div className="summary-heading">
-          <h2>{droplet ? "检测液滴" : "检测平台"}</h2>
+          <h2>{droplet ? "已测量高平台" : "检测平台"}</h2>
           <span>
             {droplet
               ? `${result?.dropletMeasurements.length ?? 0} 项`
@@ -170,7 +204,8 @@ export function SummaryPanel({ result, busy, dirty, status }: SummaryPanelProps)
             <ol className="feature-ledger">
               {result.dropletMeasurements.slice(0, 12).map((measurement) => (
                 <li key={measurement.number}>
-                  <span className="feature-number">{measurement.number}</span>
+                  <button type="button" className="segment-link" aria-pressed={selectedSegment === measurement.highSegment}
+                    onClick={() => onSelectSegment?.(measurement.highSegment)}>H{measurement.highSegment}</button>
                   <span>
                     <strong>Δ {formatMeasurement(measurement.correctedSignal, 6)}</strong>
                     <small>
@@ -178,7 +213,7 @@ export function SummaryPanel({ result, busy, dirty, status }: SummaryPanelProps)
                       {formatReferenceMode(measurement.referenceMode)}
                     </small>
                   </span>
-                  <CheckCircle2 size={15} aria-label="已测量" />
+                  {measurement.qualityFlags.length ? <AlertTriangle size={15} aria-label="需复核质量标记" /> : <CheckCircle2 size={15} aria-label="已计算（非准确率验证）" />}
                 </li>
               ))}
             </ol>

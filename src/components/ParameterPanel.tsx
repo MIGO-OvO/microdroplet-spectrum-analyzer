@@ -2,14 +2,13 @@ import {
   ChevronDown,
   FileSpreadsheet,
   FolderOpen,
-  RefreshCw,
   SlidersHorizontal,
   Sparkles,
   Waves,
 } from "lucide-react";
 
 import { formatPointCount } from "../lib/format";
-import type { AnalysisMode, AnalysisRequest, DatasetSummary } from "../types";
+import type { AnalysisRequest, AnalysisResponse, DatasetSummary } from "../types";
 
 interface NumberFieldProps {
   label: string;
@@ -21,7 +20,6 @@ interface NumberFieldProps {
   step: number;
   disabled?: boolean;
   title?: string;
-  significant?: boolean;
 }
 
 function NumberField({
@@ -33,7 +31,6 @@ function NumberField({
   step,
   disabled,
   title,
-  significant,
   onClear,
 }: NumberFieldProps) {
   return (
@@ -41,7 +38,7 @@ function NumberField({
       <span>{label}</span>
       <input
         type="number"
-        value={value === null ? "" : significant && Number(value.toPrecision(2)) === value ? value.toPrecision(2) : value}
+        value={value ?? ""}
         placeholder={onClear ? "不限" : undefined}
         min={min}
         max={max}
@@ -59,6 +56,7 @@ function NumberField({
 
 interface ParameterPanelProps {
   summary: DatasetSummary | null;
+  result?: AnalysisResponse | null;
   request: AnalysisRequest;
   disabled: boolean;
   autoRefresh: boolean;
@@ -73,6 +71,7 @@ interface ParameterPanelProps {
 
 export function ParameterPanel({
   summary,
+  result,
   request,
   disabled,
   autoRefresh,
@@ -89,21 +88,23 @@ export function ParameterPanel({
       ...request,
       preprocess: { ...request.preprocess, ...patch },
     });
-  const updatePlateau = (patch: Partial<AnalysisRequest["plateau"]>) =>
-    onRequestChange({ ...request, plateau: { ...request.plateau, ...patch } });
   const updateDroplet = (patch: Partial<AnalysisRequest["droplet"]>) =>
     onRequestChange({ ...request, droplet: { ...request.droplet, ...patch } });
   const initialBands = () => {
+    const high = result?.dropletStatistics.meanHigh;
+    const low = result?.dropletStatistics.meanBaseline;
+    if (high != null && low != null && high > low) {
+      const padding = (high - low) * 0.3;
+      const baseline = request.preprocess.manualBaseline;
+      return { lowMin: low - baseline - padding, lowMax: low - baseline + padding,
+        highMin: high - baseline - padding, highMax: high - baseline + padding };
+    }
     const highMin = request.plateau.thresholdLow;
     const highMax = request.plateau.thresholdHigh;
     const width = Math.max(Math.abs(highMax - highMin), 0.001);
     const lowMax = Math.min(0.01, highMin - width * 0.1);
     return { lowMin: lowMax - width * 0.2, lowMax, highMin, highMax };
   };
-  const setMode = (mode: AnalysisMode) => onRequestChange({ ...request, mode,
-    droplet: mode === "droplet" && request.droplet.amplitudeBands === undefined
-      ? { ...request.droplet, amplitudeBands: initialBands() } : request.droplet });
-  const droplet = request.mode === "droplet";
   const bands = request.droplet.amplitudeBands;
 
   return (
@@ -146,32 +147,9 @@ export function ParameterPanel({
       <div className="panel-section mode-section">
         <div className="section-heading">
           <Waves size={17} aria-hidden="true" />
-          <h2>分析模式</h2>
+          <h2>液滴双平台检测</h2>
         </div>
-        <div className="mode-picker" role="radiogroup" aria-label="分析模式">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={!droplet}
-            className={droplet ? "mode-option" : "mode-option active"}
-            disabled={disabled}
-            onClick={() => setMode("plateau")}
-          >
-            <strong>平台检测</strong>
-            <small>幅度区间内的平台宽度与高度</small>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={droplet}
-            className={droplet ? "mode-option active" : "mode-option"}
-            disabled={disabled}
-            onClick={() => setMode("droplet")}
-          >
-            <strong>液滴双电平分析</strong>
-            <small>高低平台区间检测与校正信号 Δ</small>
-          </button>
-        </div>
+        <p className="panel-empty-copy">检测高低平台，计算高平台相对低平台基线的校正信号 Δ。</p>
       </div>
 
       <details className="parameter-group" open>
@@ -197,42 +175,7 @@ export function ParameterPanel({
           <ChevronDown size={16} aria-hidden="true" />
         </summary>
         <div className="parameter-fields">
-          {droplet ? <p className="panel-empty-copy">双平台使用对称去尖峰 + 平滑；幅度区间对应减去手动基线后的处理信号。电平测量仍取自原始信号。</p> : <><label className="field-stack compact">
-            <span>平滑过滤方式</span>
-            <select
-              value={request.preprocess.filterMode}
-              disabled={disabled}
-              onChange={(event) =>
-                updatePreprocess({
-                  filterMode: event.target.value as AnalysisRequest["preprocess"]["filterMode"],
-                })
-              }
-            >
-              <option value="clip_smooth">削峰 + 平滑（推荐）</option>
-              <option value="median_smooth">中值 + 平滑（旧版）</option>
-            </select>
-          </label>
-          <NumberField
-            label="削峰分位数 (%)"
-            value={request.preprocess.clippingPercentile}
-            min={90}
-            max={100}
-            step={0.1}
-            disabled={disabled || request.preprocess.filterMode !== "clip_smooth"}
-            title="高于该分位数的极端值会先被削平。"
-            onChange={(clippingPercentile) => updatePreprocess({ clippingPercentile })}
-          />
-          <NumberField
-            label="中值滤波窗口"
-            value={request.preprocess.medianWindow}
-            min={3}
-            max={21}
-            step={2}
-            disabled={disabled || request.preprocess.filterMode !== "median_smooth"}
-            title="用于去除孤立突变点，分析时会归一化为奇数。"
-            onChange={(medianWindow) => updatePreprocess({ medianWindow })}
-          />
-          </>}
+          <p className="panel-empty-copy">双平台使用对称去尖峰 + 平滑；幅度区间对应减去手动基线后的处理信号。电平测量仍取自原始信号。</p>
           <NumberField
             label="平滑窗口"
             value={request.preprocess.smoothWindow}
@@ -240,11 +183,7 @@ export function ParameterPanel({
             max={51}
             step={2}
             disabled={disabled}
-            title={
-              droplet
-                ? "Savitzky–Golay 平滑窗口，只作用于检测信号；测量值始终取自原始信号。"
-                : "Savitzky–Golay 平滑窗口，分析时会归一化为奇数。"
-            }
+            title="Savitzky–Golay 平滑窗口，只作用于检测信号；测量值始终取自原始信号。"
             onChange={(smoothWindow) => updatePreprocess({ smoothWindow })}
           />
           <NumberField
@@ -254,22 +193,17 @@ export function ParameterPanel({
             max={1000}
             step={0.001}
             disabled={disabled}
-            title={
-              droplet
-                ? "从检测信号减去基线；手动幅度窗口需相应调整。对同一组平台，高低差 Δ 不受恒定平移影响。"
-                : "从整条处理后信号中减去该数值。"
-            }
+            title="从检测信号减去基线；手动幅度窗口需相应调整。对同一组平台，高低差 Δ 不受恒定平移影响。"
             onChange={(manualBaseline) => updatePreprocess({ manualBaseline })}
           />
         </div>
       </details>
 
-      {droplet ? (
         <details className="parameter-group" open>
           <summary>
             <span>
               <Waves size={17} aria-hidden="true" />
-              液滴双电平参数
+              双平台检测参数
             </span>
             <ChevronDown size={16} aria-hidden="true" />
           </summary>
@@ -281,7 +215,7 @@ export function ParameterPanel({
               </select>
             </label>
             {bands && <>
-              <p className="panel-empty-copy">分别设置高、低平台的处理后幅度；区间不可重叠。初始值仅供起点，请按当前信号调整。</p>
+              <p className="panel-empty-copy">在图中上下拖动边界线或标签，松开后更新参数；也可直接输入。高低区间须保持分离。</p>
               {([["高平台幅度下限", "highMin"], ["高平台幅度上限", "highMax"], ["低平台幅度下限", "lowMin"], ["低平台幅度上限", "lowMax"]] as const).map(([label, key]) =>
                 <NumberField key={key} label={label} value={bands[key]} min={-1e15} max={1e15} step={0.001} disabled={disabled}
                   onChange={value => updateDroplet({ amplitudeBands: { ...bands, [key]: value } })} />)}
@@ -321,7 +255,7 @@ export function ParameterPanel({
             <label className="switch-row compact-switch">
               <span>
                 <strong>允许单侧参考</strong>
-                <small>首尾液滴只有一侧 Platform 时仍输出结果</small>
+                <small>高平台仅有一侧低平台时仍输出 Δ，不执行插值</small>
               </span>
               <input
                 type="checkbox"
@@ -415,7 +349,7 @@ export function ParameterPanel({
                   max={20}
                   step={0.5}
                   disabled={disabled}
-                  title="Platform 与 Bottom 间距超过典型间距的该倍数时，标记参考间隔过大并降低置信度。"
+                  title="高平台与参考低平台间距超过典型间距的该倍数时标记并降低规则评分；超过两倍该上限时弃用该侧。"
                   onChange={(referenceGapFactor) => updateDroplet({ referenceGapFactor })}
                 />
               </div>
@@ -431,82 +365,6 @@ export function ParameterPanel({
             </button>
           </div>
         </details>
-      ) : (
-        <details className="parameter-group" open>
-          <summary>
-            <span>
-              <RefreshCw size={17} aria-hidden="true" />
-              平台检测参数
-            </span>
-            <ChevronDown size={16} aria-hidden="true" />
-          </summary>
-          <div className="parameter-fields">
-            <>
-              <NumberField
-                label="幅度下限"
-                significant
-                value={request.plateau.thresholdLow}
-                min={-1000}
-                max={1000}
-                step={0.001}
-                disabled={disabled}
-                title="低于该数值的数据点不计入平台。"
-                onChange={(thresholdLow) => updatePlateau({ thresholdLow })}
-              />
-              <NumberField
-                label="幅度上限"
-                significant
-                value={request.plateau.thresholdHigh}
-                min={-1000}
-                max={1000}
-                step={0.001}
-                disabled={disabled}
-                title="高于该数值的数据点不计入平台。"
-                onChange={(thresholdHigh) => updatePlateau({ thresholdHigh })}
-              />
-              <NumberField
-                label="最小长度"
-                value={request.plateau.minLength}
-                min={0}
-                max={1000}
-                step={1}
-                disabled={disabled}
-                title="平台必须包含的最少连续数据点。"
-                onChange={(minLength) => updatePlateau({ minLength })}
-              />
-              <NumberField
-                label="最大长度"
-                value={request.plateau.maxLength}
-                min={0}
-                max={5000}
-                step={1}
-                disabled={disabled}
-                title="用于排除异常长的信号段。"
-                onChange={(maxLength) => updatePlateau({ maxLength })}
-              />
-              <NumberField
-                label="边缘偏离阈值 (%)"
-                value={request.plateau.deviationThreshold}
-                min={0}
-                max={100}
-                step={1}
-                disabled={disabled}
-                title="精炼平台高度时剔除偏高边缘点。"
-                onChange={(deviationThreshold) => updatePlateau({ deviationThreshold })}
-              />
-              <button
-                className="button quiet full-width"
-                type="button"
-                onClick={onSuggest}
-                disabled={disabled || !summary || suggesting}
-              >
-                <Sparkles size={16} aria-hidden="true" />
-                {suggesting ? "正在计算建议…" : "自动建议参数"}
-              </button>
-            </>
-          </div>
-        </details>
-      )}
 
       <div className="panel-section analysis-options">
         <label className="switch-row">

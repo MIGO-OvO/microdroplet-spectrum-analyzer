@@ -1,14 +1,10 @@
-//! Signal preprocessing: filter modes, Savitzky–Golay smoothing and baseline shift.
-//!
-//! This module is shared by both analysis modes. The legacy plateau pipeline uses
-//! [`preprocess_signal`] directly; the droplet engine uses the same Savitzky–Golay
-//! core but feeds it a symmetric despiked signal (see `droplet::build_detection_signal`).
+//! Savitzky–Golay smoothing and parameter normalization for dual-platform detection.
 
 use std::cmp::Ordering;
 
-use crate::models::{FilterMode, PreprocessParams};
+use crate::models::PreprocessParams;
 
-use super::robust::{finite_or, odd_window, percentile, reflect_index};
+use super::robust::{finite_or, odd_window};
 
 /// Largest window a median or smoothing filter may take for a given length.
 ///
@@ -22,17 +18,6 @@ pub(crate) fn window_for_signal(window: usize, signal_length: usize) -> Option<u
         window -= 1;
     }
     (window >= 3).then_some(window)
-}
-
-fn window_for_median(window: usize, signal_length: usize) -> Option<usize> {
-    if signal_length == 0 {
-        return None;
-    }
-    let mut window = window.min(signal_length);
-    if window.is_multiple_of(2) {
-        window -= 1;
-    }
-    (window >= 1).then_some(window)
 }
 
 pub fn normalize_preprocess_params(params: &PreprocessParams) -> PreprocessParams {
@@ -172,59 +157,6 @@ pub(crate) fn savitzky_golay_filter(signal: &[f64], window: usize, order: usize)
     output
 }
 
-/// Centered median filter with reflected boundaries.
-///
-/// The historical implementation padded out-of-range samples with `0.0`, which
-/// fabricated a low edge on any signal that is not centered near zero. Reflecting
-/// the window instead keeps the boundary estimate inside the data range.
-fn median_filter(signal: &[f64], window: usize) -> Vec<f64> {
-    let half = window / 2;
-    let mut values = Vec::with_capacity(window);
-    (0..signal.len())
-        .map(|index| {
-            values.clear();
-            for offset in 0..window {
-                let source = reflect_index(
-                    index as isize + offset as isize - half as isize,
-                    signal.len(),
-                );
-                values.push(signal[source]);
-            }
-            *values.select_nth_unstable_by(half, f64::total_cmp).1
-        })
-        .collect()
-}
-
-pub fn preprocess_signal(signal: &[f64], params: &PreprocessParams) -> Vec<f64> {
-    let params = normalize_preprocess_params(params);
-    let mut processed: Vec<f64> = signal.iter().map(|value| finite_or(*value, 0.0)).collect();
-
-    match params.filter_mode {
-        FilterMode::ClipSmooth => {
-            if params.clipping_percentile < 100.0 {
-                let threshold = percentile(&processed, params.clipping_percentile);
-                for value in &mut processed {
-                    *value = value.min(threshold);
-                }
-            }
-        }
-        FilterMode::MedianSmooth => {
-            if let Some(window) = window_for_median(params.median_window, processed.len()) {
-                processed = median_filter(&processed, window);
-            }
-        }
-    }
-
-    if let Some(window) = window_for_signal(params.smooth_window, processed.len()) {
-        let order = params.smooth_order.min(window - 1);
-        processed = savitzky_golay_filter(&processed, window, order);
-    }
-    for value in &mut processed {
-        *value -= params.manual_baseline;
-    }
-    processed
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,28 +185,6 @@ mod tests {
     }
 
     #[test]
-    fn median_boundaries_reflect_instead_of_fabricating_zero() {
-        // Constant 0.4 with a 5-wide median: zero padding would drag the first
-        // and last two samples down towards zero.
-        let signal = vec![0.4; 9];
-        let filtered = median_filter(&signal, 5);
-        assert_close(&filtered, &signal, 0.0);
-
-        // The same property on the public entry point (no smoothing window).
-        let processed = preprocess_signal(
-            &signal,
-            &PreprocessParams {
-                filter_mode: FilterMode::MedianSmooth,
-                median_window: 5,
-                smooth_window: 3,
-                smooth_order: 1,
-                ..PreprocessParams::default()
-            },
-        );
-        assert_close(&processed, &signal, 1e-12);
-    }
-
-    #[test]
     fn savitzky_golay_gain_is_bounded_and_matches_a_direct_measurement() {
         let gain = savitzky_golay_noise_gain(11, 3, 4096);
         assert!(gain > 0.0 && gain < 1.0, "{gain}");
@@ -287,76 +197,6 @@ mod tests {
         assert!((savitzky_golay_noise_gain(5, 4, 6) - 1.0).abs() < 1e-8);
         // A wider smoothing window cannot amplify white noise.
         assert!(savitzky_golay_noise_gain(5, 2, 4096) > savitzky_golay_noise_gain(21, 2, 4096));
-    }
-
-    #[test]
-    fn preprocessing_matches_the_reference_fixture() {
-        let signal = [
-            0.0, 0.02, 0.0, 0.3, 0.32, 0.31, 0.29, 0.0, 0.01, 0.0, 0.6, 0.0, 0.02,
-        ];
-        let clip = preprocess_signal(
-            &signal,
-            &PreprocessParams {
-                filter_mode: FilterMode::ClipSmooth,
-                smooth_window: 5,
-                smooth_order: 3,
-                clipping_percentile: 90.0,
-                manual_baseline: 0.01,
-                ..PreprocessParams::default()
-            },
-        );
-        assert_close(
-            &clip,
-            &[
-                0.003742857143,
-                -0.044971428571,
-                0.072457142857,
-                0.216457142857,
-                0.328742857143,
-                0.323314285714,
-                0.209028571429,
-                0.066285714286,
-                -0.057257142857,
-                0.102457142857,
-                0.141885714286,
-                0.100742857143,
-                -0.017685714286,
-            ],
-            1e-9,
-        );
-
-        // Reference values were regenerated with an independent implementation
-        // after the median boundary changed from zero padding to reflection.
-        let median = preprocess_signal(
-            &signal,
-            &PreprocessParams {
-                filter_mode: FilterMode::MedianSmooth,
-                median_window: 3,
-                smooth_window: 5,
-                smooth_order: 3,
-                manual_baseline: 0.01,
-                ..PreprocessParams::default()
-            },
-        );
-        assert_close(
-            &median,
-            &[
-                0.001,
-                -0.054,
-                0.076,
-                0.222285714286,
-                0.323142857143,
-                0.319714285714,
-                0.214,
-                0.066857142857,
-                -0.028,
-                -0.007714285714,
-                -0.001428571429,
-                0.004285714286,
-                0.011428571429,
-            ],
-            1e-9,
-        );
     }
 
     #[test]
