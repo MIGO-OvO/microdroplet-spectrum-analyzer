@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
-  CheckCircle2,
   Database,
   FolderOpen,
   Play,
@@ -554,13 +553,6 @@ export default function App() {
       <footer className="status-bar">
         <span className={analyzing ? "status-dot running" : error ? "status-dot error" : "status-dot ready"} />
         <span>{status}</span>
-        <span className="status-runtime">
-          {desktopRuntime ? (
-            <><CheckCircle2 size={14} aria-hidden="true" /> 本地桌面模式</>
-          ) : (
-            "合成构图预览"
-          )}
-        </span>
       </footer>
 
       {pendingFile && (

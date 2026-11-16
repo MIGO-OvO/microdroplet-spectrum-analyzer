@@ -214,7 +214,7 @@ export function SignalChart({
       context.fillStyle = "#63727c";
       context.font = chartFont;
       context.textAlign = "center";
-      context.fillText("加载数据后显示原始信号与处理后信号", size.width / 2, size.height / 2);
+      context.fillText("暂无信号", size.width / 2, size.height / 2);
       return;
     }
 

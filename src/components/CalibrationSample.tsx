@@ -87,14 +87,13 @@ export function CalibrationSample({
         {!panel && <button className="button secondary" type="button" onClick={onOpen}>管理工作曲线</button>}
       </div>
       {curve && outcome && !outcome.error && !outcome.matched && (
-        <p className="sample-definition">
+        <p className="sample-definition" role="status">
           <span>曲线响应：{outcome.curveDefinition ? RESPONSE_DEFINITION_LABELS[outcome.curveDefinition] : "—"}</span>
           <span>本次数据：{outcome.sampleDefinition ? RESPONSE_DEFINITION_LABELS[outcome.sampleDefinition] : "—"}</span>
-          <span className="definition-mismatch">定义不同 · 仅作参考</span>
+          <span className="definition-mismatch" title={outcome.notices.join("\n")}>定义不同 · 仅作参考</span>
           {sampleResponse != null && <span>代入值 {fmt(sampleResponse)}</span>}
         </p>
       )}
-      {outcome?.notices.map(notice => <p className="sample-notice" key={notice}>{notice}</p>)}
     </div>
   );
 }

@@ -131,10 +131,9 @@ export function SummaryPanel({ result, busy, dirty, selectedSegment, onSelectSeg
       <section className="summary-section metrics-section">
         <div className="summary-heading">
           <h2>统计概览</h2>
-          {result?.usedCachedPreprocess && <span className="cache-badge">复用预处理</span>}
-          <span aria-live="polite" className={`state-mark ${busy ? "running" : dirty ? "pending" : "ready"}`}>
-            {busy ? <Clock3 size={15} aria-hidden="true" /> : dirty ? <AlertTriangle size={15} aria-hidden="true" /> : <CheckCircle2 size={15} aria-hidden="true" />}
-            {busy ? "处理中" : dirty ? "待更新" : "已同步"}
+          <span aria-live="polite" className={`state-mark ${busy ? "running" : dirty ? "pending" : result ? "ready" : ""}`}>
+            {busy ? <Clock3 size={15} aria-hidden="true" /> : dirty ? <AlertTriangle size={15} aria-hidden="true" /> : result ? <CheckCircle2 size={15} aria-hidden="true" /> : <Clock3 size={15} aria-hidden="true" />}
+            {busy ? "处理中" : dirty ? "待更新" : result ? "已同步" : "未分析"}
           </span>
         </div>
         <dl className="metric-list">
