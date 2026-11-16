@@ -5,7 +5,7 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust)](https://www.rust-lang.org/)
 [![MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-[简体中文](README.zh-CN.md) · [Download v0.1.3](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.3)
+[简体中文](README.zh-CN.md) · [Download v0.1.4](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.4)
 
 ## Overview
 
@@ -185,7 +185,13 @@ Share only anonymized or synthetic data you are authorized to publish. Contribut
 Built with Tauri, React, Vite, Lucide, calamine, csv, rust_xlsxwriter, and Plotters.
 The prior Python application is preserved in Git history.
 
-## v0.1.3
+## v0.1.4
+
+Removes repeated subtitles and persistent instructions from the analysis, calibration, history and column-selection views.
+Controls, grouping and selection states explain the workflow; selecting a segment opens its baseline details.
+GitHub Actions tests and builds the Windows installer with SHA-256 checksums. See [release notes](docs/release-v0.1.4.md).
+
+### v0.1.3
 
 Uses manual amplitude windows with smoothing 51, minimum length 150 and unlimited maximum length by default.
 Removes automatic classification controls and stops file loading from overwriting detection settings.

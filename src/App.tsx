@@ -441,10 +441,7 @@ export default function App() {
       <header className="app-bar">
         <div className="brand-lockup">
           <img src={logoUrl} alt="" />
-          <div>
-            <strong>微液滴光谱分析仪</strong>
-            <span>Microdroplet Spectrum Analyzer</span>
-          </div>
+          <strong>微液滴光谱分析仪</strong>
         </div>
 
         <div className="dataset-state" title={summary?.fileName}>
@@ -499,7 +496,6 @@ export default function App() {
         curve={historyCurve}
         onSelectCurve={handleHistoryCurveChange}
         canRecord={desktopRuntime && !!summary && !!result && !dirty && !analyzing && !fileBusy}
-        currentFileName={summary?.fileName ?? null}
         onRecord={handleRecordCurrent}
         onReload={(entry) => void handleReloadHistory(entry)}
         onReuseParameters={handleReuseHistoryParameters}
@@ -537,7 +533,7 @@ export default function App() {
             selectionRevision={selection?.revision}
             onSelectSegment={(number) => { if (result) setSelection(previous => ({ result, number, revision: (previous?.revision ?? 0) + 1 })); }}
           />
-          <SummaryPanel result={result} busy={analyzing} dirty={dirty} status={status}
+          <SummaryPanel result={result} busy={analyzing} dirty={dirty}
             selectedSegment={selection?.result === result ? selection.number : null}
             onSelectSegment={(number) => { if (result) setSelection(previous => ({ result, number, revision: (previous?.revision ?? 0) + 1 })); }} />
         </div>

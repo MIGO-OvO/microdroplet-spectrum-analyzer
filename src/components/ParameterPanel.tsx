@@ -113,31 +113,22 @@ export function ParameterPanel({
               </div>
             )}
           </dl>
-        ) : (
-          <p className="panel-empty-copy">尚未载入实验数据。</p>
-        )}
+        ) : null}
         <button className="button secondary full-width" type="button" onClick={onChooseFile}>
           <FolderOpen size={17} aria-hidden="true" />
           {summary ? "更换数据文件" : "加载数据文件"}
         </button>
       </div>
 
-      <div className="panel-section mode-section">
-        <div className="section-heading">
-          <Waves size={17} aria-hidden="true" />
-          <h2>液滴双平台检测</h2>
-        </div>
-        <p className="panel-empty-copy">检测高低平台，计算高平台相对低平台基线的校正信号 Δ。</p>
-      </div>
-
       <details className="parameter-group" open>
-        <summary><span><SlidersHorizontal size={17} aria-hidden="true" />分析横坐标范围</span><ChevronDown size={16} aria-hidden="true" /></summary>
+        <summary><span><SlidersHorizontal size={17} aria-hidden="true" />分析范围（{summary?.hasRealTime ? "时间" : "数据点"}）</span><ChevronDown size={16} aria-hidden="true" /></summary>
         <div className="parameter-fields">
-          <p className="panel-empty-copy">{summary?.hasRealTime ? "使用时间列单位" : "使用从 0 开始的有效数据点序号"}，包含两端；留空不限。仅分析此范围，不等同于图表缩放。</p>
           <NumberField label="横坐标起点" value={request.xRange?.min ?? null} min={-1e15} max={1e15} step={1} disabled={disabled}
+            title="分析范围包含两端；留空不限。数据点序号从 0 开始。"
             onChange={min => onRequestChange({ ...request, xRange: { min, max: request.xRange?.max ?? null } })}
             onClear={() => onRequestChange({ ...request, xRange: { min: null, max: request.xRange?.max ?? null } })} />
           <NumberField label="横坐标终点" value={request.xRange?.max ?? null} min={-1e15} max={1e15} step={1} disabled={disabled}
+            title="分析范围包含两端；留空不限。数据点序号从 0 开始。"
             onChange={max => onRequestChange({ ...request, xRange: { max, min: request.xRange?.min ?? null } })}
             onClear={() => onRequestChange({ ...request, xRange: { max: null, min: request.xRange?.min ?? null } })} />
           <button className="button quiet full-width" disabled={disabled || !request.xRange} onClick={() => onRequestChange({ ...request, xRange: null })}>恢复全文件范围</button>
@@ -153,7 +144,6 @@ export function ParameterPanel({
           <ChevronDown size={16} aria-hidden="true" />
         </summary>
         <div className="parameter-fields">
-          <p className="panel-empty-copy">双平台使用对称去尖峰 + 平滑；幅度区间对应减去手动基线后的处理信号。电平测量仍取自原始信号。</p>
           <NumberField
             label="平滑窗口"
             value={request.preprocess.smoothWindow}
@@ -187,7 +177,6 @@ export function ParameterPanel({
           </summary>
           <div className="parameter-fields">
             {bands && <>
-              <p className="panel-empty-copy">在图中上下拖动边界线或标签，松开后更新参数；也可直接输入。高低区间须保持分离。</p>
               {([["高平台幅度下限", "highMin"], ["高平台幅度上限", "highMax"], ["低平台幅度下限", "lowMin"], ["低平台幅度上限", "lowMax"]] as const).map(([label, key]) =>
                 <NumberField key={key} label={label} value={bands[key]} min={-1e15} max={1e15} step={0.001} disabled={disabled}
                   onChange={value => updateDroplet({ amplitudeBands: { ...bands, [key]: value } })} />)}
@@ -214,10 +203,9 @@ export function ParameterPanel({
               title="每个稳定区段两端额外裁掉的比例，用于排除过渡点对电平的影响。"
               onChange={(edgeTrimFraction) => updateDroplet({ edgeTrimFraction })}
             />
-            <label className="switch-row compact-switch">
+            <label className="switch-row compact-switch" title="缺少一侧低平台时仍计算 Δ，使用单侧低平台作为基线。">
               <span>
                 <strong>允许单侧参考</strong>
-                <small>高平台仅有一侧低平台时仍输出 Δ，不执行插值</small>
               </span>
               <input
                 type="checkbox"
@@ -293,7 +281,6 @@ export function ParameterPanel({
         <label className="switch-row">
           <span>
             <strong>自动刷新分析</strong>
-            <small>参数停止变更 350 ms 后运行</small>
           </span>
           <input
             type="checkbox"
@@ -305,7 +292,6 @@ export function ParameterPanel({
         <label className="switch-row">
           <span>
             <strong>显示数值标签</strong>
-            <small>主图最多显示 200 个标记</small>
           </span>
           <input
             type="checkbox"

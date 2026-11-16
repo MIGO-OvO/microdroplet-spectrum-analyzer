@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowDownToLine, Download, FileClock, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Download, FileClock, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 
 import type { HistoryEntry } from "../lib/history";
 import { HISTORY_LIMIT, historyConcentrations } from "../lib/history";
@@ -15,7 +15,6 @@ interface Props {
   onSelectCurve: (id: string) => void;
   /** True when a finished analysis is available to record right now. */
   canRecord: boolean;
-  currentFileName: string | null;
   onRecord: () => void;
   onReload: (entry: HistoryEntry) => void;
   onReuseParameters: (entry: HistoryEntry) => void;
@@ -42,7 +41,7 @@ function recordedAt(value: string): string {
  * number the analysis produced.
  */
 export function HistoryPanel({
-  active, entries, error, curves, curve, onSelectCurve, canRecord, currentFileName, onRecord, onReload, onReuseParameters,
+  active, entries, error, curves, curve, onSelectCurve, canRecord, onRecord, onReload, onReuseParameters,
   onUpdate, onRemove, onClear, onResetStorage, onExport,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -60,7 +59,7 @@ export function HistoryPanel({
         <div>
           <FileClock size={18} aria-hidden="true" />
           <h2 id="history-title">处理历史</h2>
-          <span>{entries.length} 条记录 · 仅保存在本机</span>
+          <span title={`历史仅保存在本机，最多 ${HISTORY_LIMIT} 条；CSV 不含原始数据文件。`}>{entries.length} 条</span>
         </div>
         <div className="history-actions">
           <button className="button primary" type="button" disabled={!canRecord} onClick={onRecord}
@@ -83,7 +82,7 @@ export function HistoryPanel({
         </label>
         <label>工作曲线
           <select value={curve?.id ?? ""} disabled={!curves.length} onChange={event => onSelectCurve(event.target.value)}>
-            <option value="">{curves.length ? "不计算浓度" : "请先在工作曲线页保存曲线"}</option>
+            <option value="">{curves.length ? "不计算浓度" : "暂无曲线"}</option>
             {curves.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         </label>
@@ -95,7 +94,6 @@ export function HistoryPanel({
           ))}
         </div>
         <span className="history-count">显示 {filtered.length} / {entries.length} 条</span>
-        <span className="history-current">当前文件：{currentFileName ?? "未加载"}</span>
       </div>
 
       {error && (
@@ -108,22 +106,21 @@ export function HistoryPanel({
       {!entries.length ? (
         <div className="history-empty">
           <FileClock size={26} aria-hidden="true" />
-          <p>还没有处理记录。载入数据并完成一次分析会自动记录，也可以在参数调整后用“记录当前结果”手动追加。</p>
+          <p>暂无处理记录</p>
         </div>
       ) : !filtered.length ? (
         <div className="history-empty"><p>没有符合当前筛选条件的记录。</p></div>
       ) : (
         <div className="history-table-wrap" tabIndex={0} aria-label="可横向滚动的处理历史">
           <table className="history-table">
-            <caption>数据来源与备注可直接编辑，离开输入框后保存；测量值只读，与记录时的分析结果一致。</caption>
             <thead>
               <tr>
                 <th scope="col">记录时间</th>
                 <th scope="col">文件</th>
-                <th scope="col">数据来源（可编辑）</th>
-                <th scope="col">备注（可编辑）</th>
+                <th scope="col">数据来源</th>
+                <th scope="col">备注</th>
                 <th scope="col">模式</th>
-                <th scope="col">响应（曲线用）</th>
+                <th scope="col">响应</th>
                 <th scope="col">浓度{curve?.unit ? `（${curve.unit}）` : ""}</th>
                 <th scope="col">检测数</th>
                 <th scope="col">平均高平台长度（点）</th>
@@ -139,7 +136,7 @@ export function HistoryPanel({
                   <td className="history-file" title={entry.filePath ?? entry.fileName}>{entry.fileName}</td>
                   <td>
                     <input className="history-input" aria-label={`${entry.fileName} 的数据来源`} defaultValue={entry.source}
-                      maxLength={120} placeholder="例如 第 3 批 · 样品 A"
+                      maxLength={120}
                       onBlur={event => {
                         const value = event.target.value.trim();
                         if (value !== entry.source) onUpdate(entry.id, { source: value });
@@ -147,7 +144,7 @@ export function HistoryPanel({
                   </td>
                   <td>
                     <input className="history-input" aria-label={`${entry.fileName} 的备注`} defaultValue={entry.note}
-                      maxLength={200} placeholder="例如 更换毛细管后首次测量"
+                      maxLength={200}
                       onBlur={event => {
                         const value = event.target.value.trim();
                         if (value !== entry.note) onUpdate(entry.id, { note: value });
@@ -190,12 +187,6 @@ export function HistoryPanel({
           </table>
         </div>
       )}
-
-      <p className="history-notice">
-        <ArrowDownToLine size={13} aria-hidden="true" />
-        历史保存在本机应用存储中，最多保留 {HISTORY_LIMIT} 条，清理应用数据或卸载会一并丢失；需要归档时请导出 CSV。
-        记录只包含分析得到的数值与处理参数，不含原始数据文件。
-      </p>
     </section>
   );
 }

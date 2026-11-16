@@ -79,7 +79,7 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
     if (!fit) throw new Error(fitState.error);
     if (savedDraft && unsaved && !window.confirm("保存将更新此曲线，后续浓度计算会使用新方程。确定保存？")) return;
     saveLibrary({ version: 1, curves: [...library.curves.filter(c => c.id !== draft.id), draft] });
-    setMessage("曲线已保存到本机；建议另存 JSON 作为可迁移备份。");
+    setMessage("曲线已保存。");
   }
   function addCurrent() {
     const value = Number(concentration);
@@ -115,20 +115,20 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
     if (await saveCalibrationArtifact(`${summary.fileName}_concentration`, "csv", tableCsv(rows))) setMessage("浓度结果已导出。");
   });
   const sampleProps = { curves: library.curves, curve: savedCurve, selected, onSelect: setSelected,
-    baseline: sampleBaseline, onBaseline: setSampleBaseline, sampleName: summary?.fileName ?? null,
+    baseline: sampleBaseline, onBaseline: setSampleBaseline,
     sampleResponse: currentResponse, outcome: conversion, busy, onExport: exportConcentration, onOpen };
   return <section className={active ? "calibration-panel" : "calibration-strip"} aria-label="工作曲线与浓度计算" hidden={hidden}>
     {!active ? <div>
       <CalibrationSample variant="strip" {...sampleProps} />
-      {savedCurve && <p className="calibration-notice">y = {(() => { try { const f = fitCalibration(savedCurve); return `${fmt(f.slope)} x + ${fmt(f.intercept)}`; } catch { return "无效方程"; } })()}
-        {savedCurve.points.some(p => p.parameters === null || JSON.stringify(p.parameters) !== JSON.stringify(request)) && " · 当前处理参数与部分标定点不同或来源参数未知，请确认测量条件可比。"}</p>}
+      {savedCurve?.points.some(p => p.parameters === null || JSON.stringify(p.parameters) !== JSON.stringify(request)) &&
+        <p className="calibration-notice">当前处理参数与部分标定点不同或未记录。</p>}
     </div> : <>
       <div className="calibration-toolbar">
-        <h2>工作曲线</h2><span>{unsaved ? "草稿 · 未保存到曲线库" : "已保存"}</span>
+        <h2>工作曲线</h2><span>{unsaved ? "未保存" : "已保存"}</span>
         <button className="button secondary" disabled={busy} onClick={() => {
           if (!unsaved || draft.points.length === 0 || window.confirm("创建新曲线将替换当前草稿，请确认已保存或导出。")) { setDraft(newCurve()); setMessage(""); }
         }}><Plus size={15}/>新建</button>
-        <label>编辑已存曲线 <select value={savedDraft?.id ?? ""} onChange={e => {
+        <label>编辑曲线 <select value={savedDraft?.id ?? ""} onChange={e => {
           const c = library.curves.find(c => c.id === e.target.value);
           if (c && (!unsaved || draft.points.length === 0 || window.confirm("切换将替换当前草稿，确定继续？"))) { setDraft(structuredClone(c)); setMessage(""); }
         }}><option value="">选择曲线</option>{library.curves.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
@@ -154,14 +154,12 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
       </div>
       <div className="calibration-toolbar calibration-capture">
         <span>当前文件：{summary?.fileName ?? "未加载"} · {responseLabel} {fmt(currentResponse)}</span>
-        <label>已知浓度<input type="number" min="0" step="any" value={concentration} onChange={e => setConcentration(e.target.value)} placeholder="用户输入"/></label>
-        <label>该点额外基线<input type="number" step="any" value={captureBaseline} onChange={e => setCaptureBaseline(e.target.value)} /></label>
+        <label>已知浓度<input type="number" min="0" step="any" value={concentration} onChange={e => setConcentration(e.target.value)}/></label>
+        <label title="拟合响应 = 采集响应 − 额外基线。已在数据处理中扣除的基线不要重复填入。">该点额外基线<input type="number" step="any" value={captureBaseline} onChange={e => setCaptureBaseline(e.target.value)} /></label>
         <button className="button primary" disabled={!currentAvailable || busy} onClick={() => void task(async () => addCurrent())}><Plus size={15}/>填入标定点</button>
-        <span>一个文件为一个测量点，同浓度可添加独立重复文件。</span>
       </div>
-      <p className="calibration-notice">拟合响应 = 采集响应 − 该点额外基线。每个浓度的测量点可分别修改；已在数据处理中扣除的基线不要重复填入。双平台采集响应为高低差 Δ，不是单个平台高度。</p>
       {new Set(draft.points.map(p => JSON.stringify(p.parameters))).size > 1 && <p className="calibration-notice">标定点使用了不同的处理参数，请核对基线、平滑和检测设置是否允许直接比较。</p>}
-      {!fit && <p className="calibration-notice">{fitState.error}</p>}
+      {!fit && draft.points.length > 0 && <p className="calibration-notice">{fitState.error}</p>}
       {fit && <>
         <div className="calibration-plots">
           <div><div className="calibration-toolbar"><h3>{residualPlot ? "残差诊断" : "线性拟合"}</h3><button className="button secondary" onClick={() => setResidualPlot(v => !v)}>{residualPlot ? "显示工作曲线" : "显示残差图"}</button>
@@ -181,14 +179,13 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
               ["失拟 F / p", `${fmt(fit.lofF)} / ${fmt(fit.lofP)}`],
               ["失拟 / 纯误差自由度", `${fit.lofDf} / ${fit.pureDf}`],
             ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-            <p>{fit.interceptP === null ? "截距 t 检验不可用：残差自由度不足或标准误为零。" : `α=0.05：${fit.interceptP < 0.05 ? "截距显著偏离零" : "未发现截距显著偏离零"}；不据此自动强制过原点。`}</p>
-            <p>{fit.lofReason ?? `α=0.05：${fit.lofP! < 0.05 ? "检出显著失拟，线性模型可能不足" : "未检出显著失拟（不等于证明线性）"}。`}</p>
+            <p>{fit.interceptP === null ? "截距 t 检验不可用：残差自由度不足或标准误为零。" : `α=0.05：${fit.interceptP < 0.05 ? "截距显著偏离零" : "截距未显著偏离零"}。`}</p>
+            <p>{fit.lofReason ?? `α=0.05：${fit.lofP! < 0.05 ? "检出显著失拟" : "未检出显著失拟"}。`}</p>
           </section>
         </div>
-        <p className="calibration-notice">残差出现漏斗趋势时，可比较加权拟合；权重应有方差依据（如 1/σ²），不会自动选择。t/F 检验假设独立、正态误差及正确方差模型；加权结果中的斜率 RSD 是参数相对标准误，不是多次建曲线的重复性。零浓度 RD 不定义。</p>
       </>}
-      {draft.points.some(p => p.parameters?.mode === "droplet" && !p.responseDefinition) && <p className="calibration-notice">此草稿含旧版低平台中心 Δ，原始响应保持原样。可用原方程反算浓度，跨响应定义时标注快速参考；采集当前定义的标定点请新建曲线。</p>}
-      <div className="calibration-toolbar"><h3>标定点与回算偏差</h3><span>{draft.points.length} 个测量点 · 浓度、额外基线和权重可修改，采集响应保留</span><button className="button secondary" disabled={!fit || busy} onClick={() => void exportData("csv")}><Download size={15}/>CSV</button><button className="button secondary" disabled={!fit || busy || !desktop} onClick={() => void exportData("xlsx")}>Excel</button></div>
+      {draft.points.some(p => p.parameters?.mode === "droplet" && !p.responseDefinition) && <p className="calibration-notice">草稿使用旧版低平台中心 Δ；采集当前定义的标定点需新建曲线。</p>}
+      <div className="calibration-toolbar"><h3>标定点与回算偏差</h3><span>{draft.points.length} 点</span><button className="button secondary" disabled={!fit || busy} onClick={() => void exportData("csv")}><Download size={15}/>CSV</button><button className="button secondary" disabled={!fit || busy || !desktop} onClick={() => void exportData("xlsx")}>Excel</button></div>
       <div className="calibration-table-wrap"><table className="calibration-table"><thead><tr><th>来源文件</th><th>浓度</th><th>采集响应</th><th>额外基线</th><th>拟合响应</th><th>自定义权重</th><th>预测响应</th><th>残差</th><th>回算浓度</th><th>RD (%)</th><th>操作</th></tr></thead><tbody>
         {draft.points.map((point, i) => <tr key={point.id}><td title={`${point.capturedAt}\n${JSON.stringify(point.parameters)}`}>{point.source}</td>
           <td><input aria-label={`标定点 ${i + 1} 浓度`} type="number" min="0" step="any" key={`${point.id}-${point.concentration}`} defaultValue={point.concentration} onBlur={e => {
@@ -207,9 +204,9 @@ export function CalibrationPanel({ active, result, summary, request, desktop, on
             if (value !== point.weight) change({ points: draft.points.map(p => p.id === point.id ? { ...p, weight: value } : p) });
           }}/></td><td>{fmt(fit?.rows[i].predicted ?? null)}</td><td>{fmt(fit?.rows[i].residual ?? null)}</td><td>{fmt(fit?.rows[i].backCalculated ?? null)}</td><td>{fmt(fit?.rows[i].rd ?? null)}</td>
           <td><button className="button secondary" onClick={() => { if (window.confirm(`从草稿移除 ${point.source}？已保存版本保持不变，直到再次保存。`)) change({ points: draft.points.filter(p => p.id !== point.id) }); }}>移除</button></td></tr>)}
-      </tbody></table>{draft.points.length === 0 && <p className="calibration-notice">先处理标准样品文件，输入其已知浓度，再点击“填入标定点”。曲线草稿会在本机自动记忆。</p>}</div>
+      </tbody></table>{draft.points.length === 0 && <div className="table-empty">暂无标定点</div>}</div>
     </>}
     {(error || initial.error || initial.draftError) && <p className="calibration-error" role="alert">{error || initial.error || initial.draftError}</p>}
-    {message && <p className="calibration-notice" role="status">{message}</p>}
+    {active && message && <p className="calibration-notice" role="status">{message}</p>}
   </section>;
 }

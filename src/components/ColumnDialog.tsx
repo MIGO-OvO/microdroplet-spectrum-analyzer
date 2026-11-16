@@ -55,11 +55,6 @@ export function ColumnDialog({ inspection, busy, onCancel, onConfirm }: ColumnDi
           </button>
         </div>
 
-        <p className="dialog-intro">
-          文件包含 {inspection.columns.length} 列、约 {inspection.rowCount.toLocaleString("zh-CN")} 行。
-          请选择要分析的信号列；时间列可以留空。
-        </p>
-
         <div className="dialog-fields">
           <label className="field-stack">
             <span>信号列</span>

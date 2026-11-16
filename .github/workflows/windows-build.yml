@@ -1,0 +1,45 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm test
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: npm run tauri build -- --bundles nsis
+      - name: Prepare installer checksums
+        shell: pwsh
+        run: |
+          $bundlePath = 'src-tauri/target/release/bundle/nsis'
+          Get-ChildItem -LiteralPath $bundlePath -Filter '*-setup.exe' |
+            Rename-Item -NewName { $_.Name.Replace(' ', '.') }
+          $checksums = Get-ChildItem -LiteralPath $bundlePath -Filter '*-setup.exe' | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          $checksums | Set-Content -LiteralPath "$bundlePath/SHA256SUMS.txt" -Encoding utf8NoBOM
+      - uses: actions/upload-artifact@v4
+        with:
+          name: microdroplet-windows-x64
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/nsis/SHA256SUMS.txt
+          if-no-files-found: error

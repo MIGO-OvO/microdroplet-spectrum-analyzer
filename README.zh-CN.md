@@ -3,7 +3,7 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri)](https://v2.tauri.app/)
 [![MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
-[English](README.md) · [下载 v0.1.3](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.3)
+[English](README.md) · [下载 v0.1.4](https://github.com/MIGO-OvO/microdroplet-spectrum-analyzer/releases/tag/v0.1.4)
 
 面向微液滴光学测量的本地 Windows 分析工作台：导入信号、调整平滑、检测平台、放大复核并导出结果。
 实验数据仅在本机处理，不上传云端。
@@ -147,7 +147,14 @@ npm run tauri -- build --bundles nsis
 感谢 Tauri、React、Vite、Lucide、calamine、csv、rust_xlsxwriter 和 Plotters。
 原 Python 实现保存在 Git 历史中。
 
-## v0.1.3 更新
+## v0.1.4 更新
+
+- 删除重复副标题、参数说明段落和表格操作说明，通过分组、控件标签和选中态表达功能。
+- 平台与基线详情在选中区段后显示；缩放比例集中在图表工具栏。
+- GitHub Actions 验证并构建 Windows 安装包，产物包含 SHA-256 校验文件。
+- 详见 [v0.1.4 发布说明](docs/release-v0.1.4.md)。
+
+### v0.1.3
 
 - 默认使用手动高低幅度区间、平滑窗口 51、最小稳定长度 150 点、最长不限，移除自动稳定段分类和自动建议入口。
 - 加载文件时保留检测参数；复用旧自动历史时清除自动生成的长度上限，原记录和工作曲线保留。

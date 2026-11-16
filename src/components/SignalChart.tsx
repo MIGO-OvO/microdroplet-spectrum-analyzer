@@ -655,18 +655,16 @@ export function SignalChart({
       <header className="chart-heading">
         <div>
           <h2 id="chart-title">信号预览</h2>
-          <span>{result?.mode === "plateau" ? "平台区间检测" : "液滴双平台检测"}</span>
         </div>
         <div className="chart-legend" aria-label="图例">
           <span><i className="legend-line original" />原始信号</span>
           <span><i className="legend-line processed" />处理后信号</span>
           {result?.mode !== "plateau" ? (
             <>
-              <span><i className="legend-square platform" />H 高平台 · 测量对象</span>
-              <span><i className="legend-dot bottom" />L 低平台 · 基线来源</span>
+              <span><i className="legend-square platform" />H 高平台</span>
+              <span><i className="legend-dot bottom" />L 低平台</span>
               <span><i className="legend-dot unknown" />U 未分类</span>
-              <span><i className="legend-delta" />高平台 − 低基线 Δ</span>
-              {amplitudeBands && <span title="幅度窗口作用于处理后信号；高低平台电平标记取自原始信号">高区间 {formatMeasurement(amplitudeBands.highMin, 3)}–{formatMeasurement(amplitudeBands.highMax, 3)} · 低区间 {formatMeasurement(amplitudeBands.lowMin, 3)}–{formatMeasurement(amplitudeBands.lowMax, 3)}</span>}
+              <span><i className="legend-delta" />校正信号 Δ</span>
             </>
           ) : (
             <span><i className="legend-dot" />检测结果</span>
@@ -680,13 +678,14 @@ export function SignalChart({
           )}
         </div>
         <div className="chart-tools" aria-label="图表缩放工具">
-          <button type="button" className="icon-button" onClick={() => zoom(0.78)} disabled={!result} aria-label="放大图表">
+          <span className="chart-range" aria-label="图表显示比例">{Number(((range[1] - range[0]) * 100).toPrecision(3))}%</span>
+          <button type="button" className="icon-button" onClick={() => zoom(0.78)} disabled={!result} aria-label="放大图表" title="放大图表">
             <ZoomIn size={17} />
           </button>
-          <button type="button" className="icon-button" onClick={() => zoom(1.28)} disabled={!result} aria-label="缩小图表">
+          <button type="button" className="icon-button" onClick={() => zoom(1.28)} disabled={!result} aria-label="缩小图表" title="缩小图表">
             <ZoomOut size={17} />
           </button>
-          <button type="button" className="icon-button" onClick={() => setRange([0, 1])} disabled={!result} aria-label="重置图表范围">
+          <button type="button" className="icon-button" onClick={() => setRange([0, 1])} disabled={!result} aria-label="重置图表范围" title="重置图表范围（0）">
             <RotateCcw size={16} />
           </button>
         </div>
@@ -759,7 +758,7 @@ export function SignalChart({
                   校正信号 Δ {formatMeasurement(activeMeasurement.correctedSignal, 6)}
                 </span>
                 <span>参考方式 {formatReferenceMode(activeMeasurement.referenceMode)}</span>
-                <span>规则评分 {activeMeasurement.confidence.toFixed(3)}（非准确率）</span>
+                <span>规则评分 {activeMeasurement.confidence.toFixed(3)}</span>
                 <span>
                   质量标记{" "}
                   {activeMeasurement.qualityFlags.length === 0
@@ -771,17 +770,7 @@ export function SignalChart({
           </div>
         )}
       </div>
-      <footer className="chart-help">
-        <span>
-          {detailError
-            ? "局部细节读取失败，请稍后缩放重试"
-            : result?.mode !== "plateau"
-              ? amplitudeBands ? "拖动边界线或标签调整上下限 · Esc 取消 · 空白处拖动平移 · 滚轮缩放"
-                : "自动分类 · 切换手动幅度区间可拖动上下限 · 点击平台复核 · 滚轮缩放"
-              : "滚轮缩放 · 拖动平移 · 双击重置 · 调参保留缩放"}
-        </span>
-        <span>当前显示 {Number(((range[1] - range[0]) * 100).toPrecision(3))}% 数据范围</span>
-      </footer>
+      {detailError && <div className="chart-error" role="alert">局部细节读取失败，请稍后缩放重试。</div>}
     </section>
   );
 }

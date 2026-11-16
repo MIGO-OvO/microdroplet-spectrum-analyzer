@@ -27,7 +27,6 @@ interface Props {
   onSelect: (id: string) => void;
   baseline: string;
   onBaseline: (value: string) => void;
-  sampleName: string | null;
   sampleResponse: number | null;
   outcome: SampleOutcome | null;
   busy: boolean;
@@ -44,7 +43,7 @@ interface Props {
  */
 export function CalibrationSample({
   variant, curves, curve, selected, onSelect, baseline, onBaseline,
-  sampleName, sampleResponse, outcome, busy, onExport, onOpen,
+  sampleResponse, outcome, busy, onExport, onOpen,
 }: Props) {
   const panel = variant === "panel";
   return (
@@ -52,14 +51,13 @@ export function CalibrationSample({
       {panel && (
         <div className="sample-heading">
           <h3>样品浓度反算</h3>
-          <span>直接代入已保存曲线，不要求分析模式一致；响应定义不同时会在下方标注。</span>
         </div>
       )}
       <div className="sample-controls">
         <label>
           {panel ? "使用曲线" : "已保存曲线"}
-          <select value={selected} onChange={event => onSelect(event.target.value)}>
-            <option value="">不使用曲线</option>
+          <select value={selected} disabled={!curves.length} onChange={event => onSelect(event.target.value)}>
+            <option value="">{curves.length ? "不使用曲线" : "暂无曲线"}</option>
             {curves.map(item => (
               <option key={item.id} value={item.id}>
                 {item.name}{item.unit ? ` (${item.unit})` : ""}
@@ -87,27 +85,16 @@ export function CalibrationSample({
           </button>
         )}
         {!panel && <button className="button secondary" type="button" onClick={onOpen}>管理工作曲线</button>}
-        {!panel && sampleName && <span className="sample-source">当前文件：{sampleName}</span>}
       </div>
-      {curve && outcome && !outcome.error && (
+      {curve && outcome && !outcome.error && !outcome.matched && (
         <p className="sample-definition">
           <span>曲线响应：{outcome.curveDefinition ? RESPONSE_DEFINITION_LABELS[outcome.curveDefinition] : "—"}</span>
           <span>本次数据：{outcome.sampleDefinition ? RESPONSE_DEFINITION_LABELS[outcome.sampleDefinition] : "—"}</span>
-          <span className={outcome.matched ? "definition-match" : "definition-mismatch"}>
-            {outcome.matched ? "定义一致" : "定义不同 · 仅作参考"}
-          </span>
+          <span className="definition-mismatch">定义不同 · 仅作参考</span>
           {sampleResponse != null && <span>代入值 {fmt(sampleResponse)}</span>}
         </p>
       )}
       {outcome?.notices.map(notice => <p className="sample-notice" key={notice}>{notice}</p>)}
-      {!curves.length && (
-        <p className="sample-hint">
-          还没有保存的工作曲线；在“工作曲线”中拟合并保存后，即可按当前文件的响应反算浓度。
-        </p>
-      )}
-      {curves.length > 0 && !curve && (
-        <p className="sample-hint">选择一条已保存曲线后，按当前文件的响应反算浓度；不要求分析模式一致。</p>
-      )}
     </div>
   );
 }

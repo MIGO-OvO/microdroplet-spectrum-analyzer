@@ -29,4 +29,4 @@ export function segmentUse(segment: StableSegment, index: ReturnType<typeof inde
   const users = index.byLow.get(segment.number) ?? [];
   return users.length ? `作为 ${users.map(m => `H${m.highSegment}`).join("、")} 的基线来源` : "已检测 · 未被用作基线";
 }
-export const SCORE_EXPLANATION = "规则评分不是准确率；手动窗口内区段初始评分为 1，仅表示命中规则。请结合原始信号与质量标记复核。";
+export const SCORE_EXPLANATION = "手动窗口内区段初始评分为 1；测量评分结合参考条件与质量标记。";

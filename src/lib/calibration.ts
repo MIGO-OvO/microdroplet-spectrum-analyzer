@@ -151,7 +151,7 @@ export function sampleLookup(
   const matched = curveDefinition === sampleDefinition;
   return {
     response, curveDefinition, sampleDefinition, matched,
-    notices: matched ? [] : [`曲线按「${RESPONSE_DEFINITION_LABELS[curveDefinition]}」建立，本次数据为「${RESPONSE_DEFINITION_LABELS[sampleDefinition]}」。已按当前响应代入计算，但两者定义不同，浓度仅作快速参考，不能直接作为定量结论。`],
+    notices: matched ? [] : [`曲线响应为「${RESPONSE_DEFINITION_LABELS[curveDefinition]}」，当前响应为「${RESPONSE_DEFINITION_LABELS[sampleDefinition]}」，浓度仅作快速参考。`],
   };
 }
 export function fitCalibration(curve: CalibrationCurve) {

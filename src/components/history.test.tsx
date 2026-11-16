@@ -22,7 +22,7 @@ function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
 function history(entries: HistoryEntry[], error = "") {
   return renderToStaticMarkup(<HistoryPanel active entries={entries} error={error} canRecord
     curves={[]} onSelectCurve={noop}
-    currentFileName="sample-3.csv" onRecord={noop} onReload={noop} onReuseParameters={noop}
+    onRecord={noop} onReload={noop} onReuseParameters={noop}
     onUpdate={noop} onRemove={noop} onClear={noop} onResetStorage={noop} onExport={noop} />);
 }
 
@@ -30,7 +30,7 @@ const curve: CalibrationCurve = { ...newCurve(), name: "QA 曲线", unit: "μmol
 
 function lookup(outcome: SampleOutcome) {
   return renderToStaticMarkup(<CalibrationSample variant="strip" curves={[curve]} curve={curve} selected={curve.id}
-    onSelect={noop} baseline="0" onBaseline={noop} sampleName="sample-3.csv" sampleResponse={0.0339}
+    onSelect={noop} baseline="0" onBaseline={noop} sampleResponse={0.0339}
     outcome={outcome} busy={false} onExport={noop} onOpen={noop} />);
 }
 
@@ -40,11 +40,10 @@ const outcome = (overrides: Partial<SampleOutcome> = {}): SampleOutcome => ({
 });
 
 describe("history tab", () => {
-  it("explains how records are created when the library is empty", () => {
+  it("shows an empty history with the record action", () => {
     const html = history([]);
-    expect(html).toContain("还没有处理记录");
+    expect(html).toContain("暂无处理记录");
     expect(html).toContain("记录当前结果");
-    expect(html).toContain("当前文件：sample-3.csv");
   });
 
   it("exposes editable source and note fields next to read-only measurements", () => {
@@ -71,7 +70,7 @@ describe("history tab", () => {
       source: `standard-${x}.csv`, capturedAt: "2026-11-15", parameters: null,
     })) };
     const html = renderToStaticMarkup(<HistoryPanel active entries={[entry({ response: 0.013 })]} error="" canRecord
-      curves={[selected]} curve={selected} onSelectCurve={noop} currentFileName="sample-3.csv"
+      curves={[selected]} curve={selected} onSelectCurve={noop}
       onRecord={noop} onReload={noop} onReuseParameters={noop} onUpdate={noop} onRemove={noop}
       onClear={noop} onResetStorage={noop} onExport={noop} />);
     expect(html).toContain("浓度（μmol/L）");
@@ -98,7 +97,8 @@ describe("sample concentration read-out", () => {
 
   it("presents a matched curve without any warning", () => {
     const html = lookup(outcome());
-    expect(html).toContain("定义一致");
+    expect(html).toContain("浓度：12.5 μmol/L");
+    expect(html).not.toContain("sample-definition");
     expect(html).not.toContain("sample-notice");
     expect(html).not.toContain("仅作参考");
   });

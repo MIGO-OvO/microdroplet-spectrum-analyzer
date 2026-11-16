@@ -11,14 +11,13 @@ import {
 
 import { useMemo } from "react";
 import { formatMeasurement, formatReferenceMode, formatQualityFlag } from "../lib/format";
-import { indexDroplets, segmentId, segmentUse, lowId, SCORE_EXPLANATION } from "../lib/droplet";
+import { indexDroplets, segmentId, segmentUse, lowId } from "../lib/droplet";
 import type { AnalysisResponse } from "../types";
 
 interface SummaryPanelProps {
   result: AnalysisResponse | null;
   busy: boolean;
   dirty: boolean;
-  status: string;
   selectedSegment?: number | null;
   onSelectSegment?: (number: number) => void;
 }
@@ -52,7 +51,7 @@ function DropletFacts({ result }: { result: AnalysisResponse }) {
   );
 }
 
-export function SummaryPanel({ result, busy, dirty, status, selectedSegment, onSelectSegment }: SummaryPanelProps) {
+export function SummaryPanel({ result, busy, dirty, selectedSegment, onSelectSegment }: SummaryPanelProps) {
   const index = useMemo(() => result ? indexDroplets(result) : null, [result]);
   const selected = index?.segments.get(selectedSegment ?? -1);
   const measurement = index?.byHigh.get(selectedSegment ?? -1);
@@ -110,32 +109,33 @@ export function SummaryPanel({ result, busy, dirty, status, selectedSegment, onS
 
   return (
     <aside className="summary-panel" aria-label="分析概览">
-      {droplet && <section className="summary-section segment-inspector" aria-live="polite">
+      {droplet && selected && index && <section className="summary-section segment-inspector" aria-live="polite">
         <h2>平台与基线关系</h2>
-        {selected && index ? <>
-          <strong>{segmentId(selected.kind, selected.number)} · {segmentUse(selected, index)}</strong>
-          <p>检测范围 {formatMeasurement(selected.start, 4)}–{formatMeasurement(selected.end, 4)} · 原始电平 {formatMeasurement(selected.level, 6)}</p>
-          {measurement ? <>
-            <dl className="file-facts">
-              <div><dt>左低平台</dt><dd>{lowId(measurement.leftLowSegment)} · {formatMeasurement(measurement.leftLowLevel, 6)}</dd></div>
-              <div><dt>右低平台</dt><dd>{lowId(measurement.rightLowSegment)} · {formatMeasurement(measurement.rightLowLevel, 6)}</dd></div>
-              <div><dt>基线计算位置</dt><dd>{formatMeasurement(measurement.center, 4)}（高平台中心）</dd></div>
-              <div><dt>低平台基线</dt><dd>{formatMeasurement(measurement.baselineReference, 6)}</dd></div>
-            </dl>
-            <p className="delta-equation">Δ = {formatMeasurement(measurement.highLevel, 6)} − ({formatMeasurement(measurement.baselineReference, 6)}) = {formatMeasurement(measurement.correctedSignal, 6)}</p>
-            <p>{measurement.qualityFlags.map(formatQualityFlag).join("、") || "无质量标记（不代表已验证）"}</p>
-          </> : selected.kind === "platform" ? <p>未输出 Δ：缺少可用低平台，或单侧参考已禁用。请检查分析范围与参考配对参数。</p> : null}
-          {selected.kind === "bottom" && (index.byLow.get(selected.number) ?? []).map(m => <button
-            key={m.number} type="button" className="segment-link" onClick={() => onSelectSegment?.(m.highSegment)}>
-            查看 H{m.highSegment} · {formatReferenceMode(m.referenceMode)}
-          </button>)}
-        </> : <p>点击图中的平台或下方表格编号，查看检测范围、测量状态及实际基线来源。</p>}
-        <p className="score-note">{SCORE_EXPLANATION}</p>
+        <strong>{segmentId(selected.kind, selected.number)} · {segmentUse(selected, index)}</strong>
+        <p>检测范围 {formatMeasurement(selected.start, 4)}–{formatMeasurement(selected.end, 4)} · 原始电平 {formatMeasurement(selected.level, 6)}</p>
+        {measurement ? <>
+          <dl className="file-facts">
+            <div><dt>左低平台</dt><dd>{lowId(measurement.leftLowSegment)} · {formatMeasurement(measurement.leftLowLevel, 6)}</dd></div>
+            <div><dt>右低平台</dt><dd>{lowId(measurement.rightLowSegment)} · {formatMeasurement(measurement.rightLowLevel, 6)}</dd></div>
+            <div><dt>基线计算位置</dt><dd>{formatMeasurement(measurement.center, 4)}（高平台中心）</dd></div>
+            <div><dt>低平台基线</dt><dd>{formatMeasurement(measurement.baselineReference, 6)}</dd></div>
+          </dl>
+          <p className="delta-equation">Δ = {formatMeasurement(measurement.highLevel, 6)} − ({formatMeasurement(measurement.baselineReference, 6)}) = {formatMeasurement(measurement.correctedSignal, 6)}</p>
+          {measurement.qualityFlags.length > 0 && <p>{measurement.qualityFlags.map(formatQualityFlag).join("、")}</p>}
+        </> : selected.kind === "platform" ? <p>未输出 Δ：缺少可用低平台，或单侧参考已禁用。请检查分析范围与参考配对参数。</p> : null}
+        {selected.kind === "bottom" && (index.byLow.get(selected.number) ?? []).map(m => <button
+          key={m.number} type="button" className="segment-link" onClick={() => onSelectSegment?.(m.highSegment)}>
+          查看 H{m.highSegment} · {formatReferenceMode(m.referenceMode)}
+        </button>)}
       </section>}
       <section className="summary-section metrics-section">
         <div className="summary-heading">
           <h2>统计概览</h2>
           {result?.usedCachedPreprocess && <span className="cache-badge">复用预处理</span>}
+          <span aria-live="polite" className={`state-mark ${busy ? "running" : dirty ? "pending" : "ready"}`}>
+            {busy ? <Clock3 size={15} aria-hidden="true" /> : dirty ? <AlertTriangle size={15} aria-hidden="true" /> : <CheckCircle2 size={15} aria-hidden="true" />}
+            {busy ? "处理中" : dirty ? "待更新" : "已同步"}
+          </span>
         </div>
         <dl className="metric-list">
           {metrics.map(({ label, value, icon: Icon }) => (
@@ -153,29 +153,6 @@ export function SummaryPanel({ result, busy, dirty, status, selectedSegment, onS
             <DropletFacts result={result} />
           </div>
         )}
-      </section>
-
-      <section className="summary-section state-section" aria-live="polite">
-        <div className="summary-heading">
-          <h2>分析状态</h2>
-          {busy ? (
-            <span className="state-mark running">
-              <Clock3 size={15} aria-hidden="true" />
-              处理中
-            </span>
-          ) : dirty ? (
-            <span className="state-mark pending">
-              <AlertTriangle size={15} aria-hidden="true" />
-              待更新
-            </span>
-          ) : (
-            <span className="state-mark ready">
-              <CheckCircle2 size={15} aria-hidden="true" />
-              已同步
-            </span>
-          )}
-        </div>
-        <p>{status}</p>
         {result && result.warnings.length > 0 && (
           <ul className="warning-list">
             {result.warnings.map((warning) => (
@@ -198,7 +175,7 @@ export function SummaryPanel({ result, busy, dirty, status, selectedSegment, onS
           !result || result.dropletMeasurements.length === 0 ? (
             <div className="compact-empty">
               <Waves size={20} aria-hidden="true" />
-              <p>{result ? "当前参数下未检出可配对的液滴。" : "运行分析后在这里复核液滴结果。"}</p>
+              <p>{result ? "未检出可配对的液滴" : "暂无测量结果"}</p>
             </div>
           ) : (
             <ol className="feature-ledger">
@@ -213,7 +190,7 @@ export function SummaryPanel({ result, busy, dirty, status, selectedSegment, onS
                       {formatReferenceMode(measurement.referenceMode)}
                     </small>
                   </span>
-                  {measurement.qualityFlags.length ? <AlertTriangle size={15} aria-label="需复核质量标记" /> : <CheckCircle2 size={15} aria-label="已计算（非准确率验证）" />}
+                  {measurement.qualityFlags.length ? <AlertTriangle className="quality-warning" size={15} aria-label="需复核质量标记" /> : <CheckCircle2 size={15} aria-label="已计算" />}
                 </li>
               ))}
             </ol>
@@ -221,7 +198,7 @@ export function SummaryPanel({ result, busy, dirty, status, selectedSegment, onS
         ) : !result || result.plateauFeatures.length === 0 ? (
           <div className="compact-empty">
             <Activity size={20} aria-hidden="true" />
-            <p>{result ? "当前参数下未检测到特征。" : "运行分析后在这里复核检测项。"}</p>
+            <p>{result ? "未检测到平台" : "暂无检测结果"}</p>
           </div>
         ) : (
           <ol className="feature-ledger">
@@ -236,14 +213,6 @@ export function SummaryPanel({ result, busy, dirty, status, selectedSegment, onS
               </li>
             ))}
           </ol>
-        )}
-        {!droplet && result && result.plateauFeatures.length > 12 && (
-          <p className="ledger-overflow">其余 {result.plateauFeatures.length - 12} 项见下方结果表。</p>
-        )}
-        {droplet && result && result.dropletMeasurements.length > 12 && (
-          <p className="ledger-overflow">
-            其余 {result.dropletMeasurements.length - 12} 项见下方结果表。
-          </p>
         )}
       </section>
     </aside>

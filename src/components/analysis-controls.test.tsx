@@ -42,7 +42,7 @@ describe("analysis controls without browser automation", () => {
     expect(html).not.toContain("削峰分位数");
     expect(html).not.toContain('role="radiogroup"');
     expect(html).not.toContain("边缘偏离阈值");
-    expect(html).toContain("在图中上下拖动边界线");
+    expect(html).toContain("分析范围（数据点）");
     expect(html).not.toContain('role="alert"');
   });
   it("renders an actionable warning for overlapping bands", () => {
