@@ -19,6 +19,7 @@ import { ResultsTable } from "./components/ResultsTable";
 import { SignalChart } from "./components/SignalChart";
 import { SummaryPanel } from "./components/SummaryPanel";
 import { SaveSampleDialog } from "./components/SaveSampleDialog";
+import { SampleCoordinatesDialog } from "./components/SampleCoordinates";
 import { SampleWorkspace } from "./components/SampleWorkspace";
 import {
   chooseChartPath,
@@ -46,7 +47,7 @@ import {
   type HistoryOrigin,
 } from "./lib/history";
 import { SAMPLE_DROPLET_RESULT, SAMPLE_SUMMARY } from "./lib/sample";
-import { positionLabel } from "./lib/sampling";
+import { positionLabel, type SampleCoordinatesByWindow } from "./lib/sampling";
 import {
   DEFAULT_REQUEST,
   currentAnalysisRequest,
@@ -54,6 +55,7 @@ import {
   type AnalysisResponse,
   type DatasetSummary,
   type FileInspection,
+  type SampleCoordinates,
   type SamplingRecord,
 } from "./types";
 
@@ -98,6 +100,8 @@ export default function App() {
   const [pendingFile, setPendingFile] = useState<PendingFile | null>(null);
   const [loadedFile, setLoadedFile] = useState<PendingFile | null>(null);
   const [saveSampleOpen, setSaveSampleOpen] = useState(false);
+  const [coordinateDialogOpen, setCoordinateDialogOpen] = useState(false);
+  const [coordinatesByWindow, setCoordinatesByWindow] = useState<SampleCoordinatesByWindow>({});
   const [mapSamples, setMapSamples] = useState<number[]>([]);
   const [fileBusy, setFileBusy] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -119,6 +123,8 @@ export default function App() {
   });
   const historyCurve = calibrationLibrary.curves.find(curve => curve.id === historyCurveId);
   const [loadedOrigin, setLoadedOrigin] = useState<HistoryOrigin | null>(null);
+  const currentSampleKey = loadedOrigin?.sampleKey ?? "";
+  const manualCoordinates = coordinatesByWindow[currentSampleKey] ?? null;
   const historyWritable = useRef(!initialHistory.error);
   /** Origin of the dataset whose initial analysis is about to finish, if any. */
   const recordOrigin = useRef<HistoryOrigin | null>(null);
@@ -210,7 +216,7 @@ export default function App() {
    * record its result once, whatever triggered the load (file picker or history).
    */
   const applyDataset = useCallback(
-    async (loaded: DatasetSummary, nextRequest: AnalysisRequest, origin: HistoryOrigin) => {
+    async (loaded: DatasetSummary, nextRequest: AnalysisRequest, origin: HistoryOrigin, coordinates: SampleCoordinatesByWindow = {}) => {
       skipNextAutoRun.current = true;
       requestRef.current = nextRequest;
       summaryRef.current = loaded;
@@ -220,7 +226,9 @@ export default function App() {
       setDatasetKey((key) => key + 1);
       setPendingFile(null);
       setSaveSampleOpen(false);
+      setCoordinateDialogOpen(false);
       setLoadedOrigin(origin);
+      setCoordinatesByWindow(coordinates);
       const shouldAutoRefresh = loaded.pointCount <= LARGE_DATA_THRESHOLD;
       setAutoRefresh(shouldAutoRefresh);
       setStatus(
@@ -278,15 +286,18 @@ export default function App() {
     }
   }, [desktopRuntime]);
 
-  const handleColumnConfirm = async (signalColumn: number, timeColumn: number | null, sampleKey: string | null) => {
+  const handleColumnConfirm = async (
+    signalColumn: number, timeColumn: number | null, sampleKey: string | null, coordinates: SampleCoordinates | null,
+  ) => {
     if (!pendingFile || running.current) return;
     setFileBusy(true);
     setError(null);
     try {
       const loaded = await loadDataFile(pendingFile.path, signalColumn, timeColumn, sampleKey);
       const nextRequest = { ...requestRef.current, xRange: null };
+      const nextCoordinates = { ...(pendingFile.initial ? coordinatesByWindow : {}), [sampleKey ?? ""]: coordinates };
       setLoadedFile({ path: pendingFile.path, inspection: pendingFile.inspection });
-      await applyDataset(loaded, nextRequest, { path: pendingFile.path, signalColumn, timeColumn, sampleKey });
+      await applyDataset(loaded, nextRequest, { path: pendingFile.path, signalColumn, timeColumn, sampleKey }, nextCoordinates);
     } catch (loadError) {
       const message = errorMessage(loadError);
       setError(message);
@@ -400,7 +411,9 @@ export default function App() {
     catch (storageError) { setError(`工作曲线选择无法记忆：${errorMessage(storageError)}`); }
   };
 
-  const reloadSource = async (origin: HistoryOrigin, fileName: string, parameters: AnalysisRequest | null) => {
+  const reloadSource = async (
+    origin: HistoryOrigin, fileName: string, parameters: AnalysisRequest | null, coordinates: SampleCoordinates | null = null,
+  ) => {
     if (running.current) {
       setStatus("请等待当前分析完成后再重新载入。");
       return;
@@ -414,7 +427,7 @@ export default function App() {
         ? currentAnalysisRequest(parameters)
         : { ...requestRef.current, xRange: null };
       setLoadedFile(null);
-      await applyDataset(loaded, nextRequest, origin);
+      await applyDataset(loaded, nextRequest, origin, { [origin.sampleKey ?? ""]: coordinates });
       setPanel("analysis");
     } catch (reloadError) {
       setError(errorMessage(reloadError));
@@ -436,7 +449,7 @@ export default function App() {
   const handleReloadSample = async (record: SamplingRecord) => {
     const { source, parameters } = record;
     await reloadSource({ path: source.path, signalColumn: source.signalColumn,
-      timeColumn: source.timeColumn, sampleKey: source.metadata?.key }, source.fileName, parameters);
+      timeColumn: source.timeColumn, sampleKey: source.metadata?.key }, source.fileName, parameters, record.manualCoordinates);
   };
 
   const handleReuseHistoryParameters = (entry: HistoryEntry) => {
@@ -534,10 +547,11 @@ export default function App() {
         <MapPin size={16} aria-hidden="true" />
         <div className="sample-source-info">
           <strong>{summary.sample?.sampleName ?? summary.sample?.sampleId ?? "采样位置"}</strong>
-          <span>{positionLabel(summary.sample)}{summary.sample?.startedAt ? ` · ${summary.sample.startedAt}` : ""}</span>
+          <span>{positionLabel(summary.sample, manualCoordinates)}{summary.sample?.startedAt ? ` · ${summary.sample.startedAt}` : ""}</span>
         </div>
         {loadedFile && (loadedFile.inspection.samples?.length ?? 0) > 1 && <button className="button secondary" type="button"
           disabled={fileBusy || analyzing} onClick={() => setPendingFile({ ...loadedFile, initial: loadedOrigin })}>切换样本</button>}
+        <button className="button secondary" type="button" disabled={fileBusy} onClick={() => setCoordinateDialogOpen(true)}>设置坐标</button>
         <button className="button secondary" type="button" onClick={() => setSaveSampleOpen(true)}
           disabled={!result || dirty || analyzing || fileBusy}>保存采样数据</button>
       </div>}
@@ -596,12 +610,18 @@ export default function App() {
         <ColumnDialog
           inspection={pendingFile.inspection}
           initial={pendingFile.initial}
+          coordinatesByWindow={pendingFile.initial ? coordinatesByWindow : {}}
           busy={fileBusy}
           onCancel={() => setPendingFile(null)}
-          onConfirm={(signalColumn, timeColumn, sampleKey) => void handleColumnConfirm(signalColumn, timeColumn, sampleKey)}
+          onConfirm={(signalColumn, timeColumn, sampleKey, coordinates) => void handleColumnConfirm(signalColumn, timeColumn, sampleKey, coordinates)}
         />
       )}
-      {saveSampleOpen && summary && result && <SaveSampleDialog summary={summary} result={result} curves={calibrationLibrary.curves}
+      {coordinateDialogOpen && summary && <SampleCoordinatesDialog sample={summary.sample} coordinates={manualCoordinates}
+        onClose={() => setCoordinateDialogOpen(false)} onApply={coordinates => {
+          setCoordinatesByWindow(previous => ({ ...previous, [currentSampleKey]: coordinates }));
+          setCoordinateDialogOpen(false);
+        }} />}
+      {saveSampleOpen && summary && result && <SaveSampleDialog summary={summary} result={result} manualCoordinates={manualCoordinates} curves={calibrationLibrary.curves}
         onClose={() => setSaveSampleOpen(false)} onSaved={record => {
           setSaveSampleOpen(false);
           setStatus(`已保存「${record.name}」到采样库。`);

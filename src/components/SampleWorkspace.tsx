@@ -66,7 +66,7 @@ export function SampleWorkspace({ desktop, busy, selected, onSelect, onReload }:
           return <div className="sampling-row" data-focused={focused === record.id} key={record.id}>
             <button type="button" className="sampling-row-summary" onClick={() => setFocused(record.id)} aria-pressed={focused === record.id}>
               <strong>{record.name}</strong><span>{recordConcentration(record)}</span>
-              <small>{positionLabel(record.source.metadata)}</small>
+              <small>{positionLabel(record.source.metadata, record.manualCoordinates)}</small>
             </button>
             <button type="button" className="button quiet compact-button sampling-toggle" disabled={!samplePosition(record)}
               title={samplePosition(record) ? undefined : positionLabel(record.source.metadata)}
@@ -82,7 +82,7 @@ export function SampleWorkspace({ desktop, busy, selected, onSelect, onReload }:
           <dt>原始文件</dt><dd title={inspected.source.path}>{inspected.source.fileName}</dd>
           {inspected.source.metadata?.sampleId && <><dt>样本编号</dt><dd>{inspected.source.metadata.sampleId}</dd></>}
           {inspected.source.metadata?.startedAt && <><dt>采样时间</dt><dd>{inspected.source.metadata.startedAt}</dd></>}
-          <dt>位置</dt><dd>{positionLabel(inspected.source.metadata)}</dd>
+          <dt>位置</dt><dd>{positionLabel(inspected.source.metadata, inspected.manualCoordinates)}</dd>
           <dt>浓度</dt><dd>{recordConcentration(inspected)}{inspected.analyte && ` · ${inspected.analyte}`}</dd>
           {inspected.concentration?.curve && <><dt>工作曲线</dt><dd>{inspected.concentration.curve.name}</dd></>}
           <dt>响应值</dt><dd>{inspected.response == null ? "—" : measurement(inspected.response)} · {inspected.detectionCount} 项检测</dd>

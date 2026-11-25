@@ -5,17 +5,18 @@ import { saveSamplingRecord } from "../lib/bridge";
 import { analysisResponse, calculateConcentration, fitCalibration, sampleLookup, type CalibrationCurve } from "../lib/calibration";
 import { errorMessage } from "../lib/format";
 import { positionLabel } from "../lib/sampling";
-import type { AnalysisResponse, DatasetSummary, SamplingRecord, SaveSampleRequest } from "../types";
+import type { AnalysisResponse, DatasetSummary, SampleCoordinates, SamplingRecord, SaveSampleRequest } from "../types";
 
 interface Props {
   summary: DatasetSummary;
   result: AnalysisResponse;
+  manualCoordinates: SampleCoordinates | null;
   curves: CalibrationCurve[];
   onClose: () => void;
   onSaved: (record: SamplingRecord) => void;
 }
 
-export function SaveSampleDialog({ summary, result, curves, onClose, onSaved }: Props) {
+export function SaveSampleDialog({ summary, result, manualCoordinates, curves, onClose, onSaved }: Props) {
   const sample = summary.sample;
   const [name, setName] = useState(sample?.sampleName ?? sample?.sampleId ?? summary.fileName.replace(/\.[^.]+$/, ""));
   const [analyte, setAnalyte] = useState("");
@@ -60,7 +61,7 @@ export function SaveSampleDialog({ summary, result, curves, onClose, onSaved }: 
     setSaving(true);
     setError("");
     try {
-      const saved = await saveSamplingRecord({ resultId: result.resultId, name, analyte, concentration, replaceExisting });
+      const saved = await saveSamplingRecord({ resultId: result.resultId, name, analyte, concentration, manualCoordinates, replaceExisting });
       if (saved) onSaved(saved);
       else setReplaceExisting(true);
     } catch (cause) { setError(errorMessage(cause)); }
@@ -72,7 +73,7 @@ export function SaveSampleDialog({ summary, result, curves, onClose, onSaved }: 
       onMouseDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === "Escape" && !saving) onClose(); }}>
       <div className="dialog-heading">
         <span className="dialog-icon"><MapPin size={20} aria-hidden="true" /></span>
-        <div><h2 id="save-sample-title">保存采样数据</h2><p>{positionLabel(sample)}</p></div>
+        <div><h2 id="save-sample-title">保存采样数据</h2><p>{positionLabel(sample, manualCoordinates)}</p></div>
         <button className="icon-button" type="button" aria-label="关闭保存采样" disabled={saving} onClick={onClose}><X size={18} /></button>
       </div>
       <form onSubmit={event => { event.preventDefault(); void save(); }}>

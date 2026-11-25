@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_REQUEST, type SamplingRecord } from "../types";
 import { buildMapLayers } from "./sample-surface";
+import { readCoordinateDraft } from "./sampling";
 
 function record(id: number, latitude: number, longitude: number, value: number): SamplingRecord {
   const sampleId = String(id);
@@ -16,6 +17,21 @@ function record(id: number, latitude: number, longitude: number, value: number):
 }
 
 describe("sample concentration layers", () => {
+  it("uses manual positions for missing or invalid file coordinates and keeps simulation status", () => {
+    const manualCoordinates = { latitude: 25.01, longitude: 110 };
+    const manual = record(3, 25, 110.02, 3);
+    manual.manualCoordinates = manualCoordinates;
+    manual.source.metadata!.invalidPosition = true;
+    const records = [record(1, 25, 110, 0), record(2, 25, 110.01, 5), manual];
+    const layers = buildMapLayers(records);
+    expect(layers.points[2].position).toEqual({ lat: 25.01, lng: 110 });
+    expect(layers.cells.length).toBeGreaterThan(0);
+    manual.source.metadata!.simulated = true;
+    expect(buildMapLayers(records).cells).toHaveLength(0);
+    manual.source.metadata = null;
+    expect(buildMapLayers(records).points[2].position).toEqual({ lat: 25.01, lng: 110 });
+  });
+
   it("draws an IDW grid and isolines within the same triangular coverage", () => {
     const layers = buildMapLayers([record(1, 25, 110, 0), record(2, 25, 110.01, 5), record(3, 25.01, 110, 3)]);
     expect(layers.points).toHaveLength(3);
@@ -39,4 +55,13 @@ describe("sample concentration layers", () => {
     simulated.source.metadata!.simulated = true;
     expect(buildMapLayers([a, b, simulated]).cells).toHaveLength(0);
   });
+});
+
+it("reads a complete manual coordinate pair and rejects partial, malformed or out-of-range input", () => {
+  expect(readCoordinateDraft({ latitude: "", longitude: " " })).toBeNull();
+  expect(readCoordinateDraft({ latitude: "0", longitude: "-180" })).toEqual({ latitude: 0, longitude: -180 });
+  for (const input of ["", "0x10", "91", "NaN"]) {
+    expect(typeof readCoordinateDraft({ latitude: input, longitude: "110.1" })).toBe("string");
+  }
+  expect(typeof readCoordinateDraft({ latitude: "25", longitude: "180.1" })).toBe("string");
 });

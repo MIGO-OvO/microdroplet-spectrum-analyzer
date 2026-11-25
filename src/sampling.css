@@ -23,7 +23,23 @@
 .sample-source-strip .button { flex: 0 0 auto; white-space: nowrap; }
 .import-sample { grid-column: 1 / -1; display: grid; gap: 5px; }
 .sample-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border: 0; padding: 16px 0 0; margin: 0; }
-.sample-fields input, .sampling-search input {
+.sample-coordinate-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+  min-width: 0;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.sample-coordinate-fields legend { padding: 0 4px; font-size: var(--text-small); font-weight: 600; }
+.sample-coordinate-fields .field-stack > span { font-size: var(--text-small); }
+.sample-coordinate-fields :is(.field-error, .button) { grid-column: 1 / -1; margin: 0; }
+.sample-coordinate-fields .button { justify-self: start; }
+.sample-coordinate-dialog .sample-coordinate-fields { margin: 14px 16px; }
+.sample-fields input, .sampling-search input, .sample-coordinate-fields input {
   width: 100%;
   min-height: 36px;
   min-width: 0;

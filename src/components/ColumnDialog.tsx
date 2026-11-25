@@ -1,22 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, FileSpreadsheet, X } from "lucide-react";
 
-import type { FileInspection } from "../types";
-import { positionLabel } from "../lib/sampling";
+import type { FileInspection, SampleCoordinates } from "../types";
+import { coordinateDraft, positionLabel, readCoordinateDraft, type CoordinateDraft, type SampleCoordinatesByWindow } from "../lib/sampling";
 import type { HistoryOrigin } from "../lib/history";
+import { SampleCoordinateFields } from "./SampleCoordinates";
 
 interface ColumnDialogProps {
   inspection: FileInspection;
   busy: boolean;
   initial?: HistoryOrigin | null;
+  coordinatesByWindow: SampleCoordinatesByWindow;
   onCancel: () => void;
-  onConfirm: (signalColumn: number, timeColumn: number | null, sampleKey: string | null) => void;
+  onConfirm: (signalColumn: number, timeColumn: number | null, sampleKey: string | null, coordinates: SampleCoordinates | null) => void;
 }
 
-export function ColumnDialog({ inspection, initial, busy, onCancel, onConfirm }: ColumnDialogProps) {
+export function ColumnDialog({ inspection, initial, coordinatesByWindow, busy, onCancel, onConfirm }: ColumnDialogProps) {
   const samples = inspection.samples ?? [];
   const [sampleKey, setSampleKey] = useState(initial?.sampleKey ?? samples[0]?.key ?? "");
   const selectedSample = samples.find(sample => sample.key === sampleKey);
+  const [drafts, setDrafts] = useState<Record<string, CoordinateDraft>>({});
+  const draft = drafts[sampleKey] ?? coordinateDraft(coordinatesByWindow[sampleKey]);
+  const coordinates = readCoordinateDraft(draft);
   const [signalColumn, setSignalColumn] = useState(initial?.signalColumn ?? inspection.suggestedSignalColumn ?? inspection.columns[0]?.index ?? 0);
   const [timeColumn, setTimeColumn] = useState<number | "">(initial ? initial.timeColumn ?? "" : inspection.suggestedTimeColumn ?? "");
   const signalSelect = useRef<HTMLSelectElement>(null);
@@ -71,7 +76,7 @@ export function ColumnDialog({ inspection, initial, busy, onCancel, onConfirm }:
                 </option>)}
               </select>
             </label>
-            <small>{positionLabel(selectedSample)}{selectedSample?.startedAt ? ` · ${selectedSample.startedAt}` : ""}</small>
+            <small>文件坐标 · {positionLabel(selectedSample)}{selectedSample?.startedAt ? ` · ${selectedSample.startedAt}` : ""}</small>
           </div>}
           <label className="field-stack">
             <span>信号列</span>
@@ -104,6 +109,8 @@ export function ColumnDialog({ inspection, initial, busy, onCancel, onConfirm }:
               ))}
             </select>
           </label>
+          <SampleCoordinateFields draft={draft} error={typeof coordinates === "string" ? coordinates : null} disabled={busy}
+            onChange={next => setDrafts(previous => ({ ...previous, [sampleKey]: next }))} />
         </div>
 
         {columnsConflict && (
@@ -119,8 +126,8 @@ export function ColumnDialog({ inspection, initial, busy, onCancel, onConfirm }:
           <button
             className="button primary"
             type="button"
-            onClick={() => onConfirm(signalColumn, selectedTime, sampleKey || null)}
-            disabled={busy || columnsConflict}
+            onClick={() => { if (typeof coordinates !== "string") onConfirm(signalColumn, selectedTime, sampleKey || null, coordinates); }}
+            disabled={busy || columnsConflict || typeof coordinates === "string"}
           >
             {busy ? "正在读取…" : "载入并分析"}
             {!busy && <ArrowRight size={17} aria-hidden="true" />}

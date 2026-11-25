@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    csv_samples::SampleMetadata,
+    csv_samples::{SampleCoordinates, SampleMetadata},
     models::{AnalysisMode, AnalysisRequest, FullAnalysisResult},
 };
 
@@ -50,6 +50,7 @@ pub struct SaveSampleRequest {
     name: String,
     analyte: String,
     concentration: Option<Concentration>,
+    manual_coordinates: Option<SampleCoordinates>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,6 +60,8 @@ pub struct SampleDetails {
     analyte: String,
     source: SampleSource,
     concentration: Option<Concentration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    manual_coordinates: Option<SampleCoordinates>,
     response: Option<f64>,
     detection_count: usize,
     point_count: usize,
@@ -85,6 +88,12 @@ impl SampleDetails {
         if name.is_empty() {
             return Err("请输入采样名称。".into());
         }
+        if request
+            .manual_coordinates
+            .is_some_and(|value| !value.is_valid())
+        {
+            return Err("纬度须在 −90° 到 90°，经度须在 −180° 到 180°。".into());
+        }
         let mut concentration = request.concentration;
         if let Some(value) = &mut concentration {
             value.unit = value.unit.trim().to_owned();
@@ -107,6 +116,7 @@ impl SampleDetails {
             analyte: request.analyte.trim().to_owned(),
             source,
             concentration,
+            manual_coordinates: request.manual_coordinates,
             response,
             detection_count,
             point_count: result.x.len(),
@@ -247,6 +257,7 @@ mod tests {
                 curve: None,
                 notices: Vec::new(),
             }),
+            manual_coordinates: None,
             response: Some(0.5),
             detection_count: 12,
             point_count: 180,
@@ -268,9 +279,13 @@ mod tests {
                 .is_none()
         );
         assert_eq!(list_at(&path).unwrap()[0].details.name, "湖心");
-        let updated = save_at(&path, detail("更新", "renamed.csv", "a"), true)
-            .unwrap()
-            .unwrap();
+        let coordinates = SampleCoordinates {
+            latitude: 24.3,
+            longitude: 110.5,
+        };
+        let mut corrected = detail("更新", "renamed.csv", "a");
+        corrected.manual_coordinates = Some(coordinates);
+        let updated = save_at(&path, corrected, true).unwrap().unwrap();
         assert_eq!(first.id, updated.id);
         let second = save_at(&path, detail("岸边", "raw.csv", "b"), false)
             .unwrap()
@@ -280,10 +295,20 @@ mod tests {
         assert_eq!(records.len(), 2);
         let updated = records.iter().find(|record| record.id == first.id).unwrap();
         assert_eq!(updated.details.name, "更新");
+        assert_eq!(updated.details.manual_coordinates, Some(coordinates));
         assert_eq!(
             updated.details.source.metadata.as_ref().unwrap().latitude,
             Some(25.1)
         );
         assert_eq!(updated.details.concentration.as_ref().unwrap().value, 1.25);
+        assert_eq!(
+            records
+                .iter()
+                .find(|record| record.id == second.id)
+                .unwrap()
+                .details
+                .manual_coordinates,
+            None
+        );
     }
 }

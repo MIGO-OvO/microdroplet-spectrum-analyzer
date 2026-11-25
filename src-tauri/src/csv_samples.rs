@@ -5,6 +5,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::ColumnInfo;
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SampleCoordinates {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+impl SampleCoordinates {
+    pub fn is_valid(&self) -> bool {
+        (-90.0..=90.0).contains(&self.latitude) && (-180.0..=180.0).contains(&self.longitude)
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SampleMetadata {
@@ -121,8 +133,11 @@ impl SampleGroups {
         if !sample.invalid_position && (!lat.is_empty() || !lng.is_empty()) {
             match (lat.parse::<f64>(), lng.parse::<f64>()) {
                 (Ok(lat), Ok(lng))
-                    if (-90.0..=90.0).contains(&lat)
-                        && (-180.0..=180.0).contains(&lng)
+                    if (SampleCoordinates {
+                        latitude: lat,
+                        longitude: lng,
+                    })
+                    .is_valid()
                         && sample
                             .latitude
                             .is_none_or(|value| (lat - value).abs() <= 1e-8)

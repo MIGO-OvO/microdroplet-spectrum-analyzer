@@ -100,6 +100,11 @@ export interface DatasetSummary {
   sample?: SampleMetadata | null;
 }
 
+export interface SampleCoordinates {
+  latitude: number;
+  longitude: number;
+}
+
 export interface SampleMetadata {
   key: string;
   sampleId: string | null;
@@ -128,6 +133,7 @@ export interface SaveSampleRequest {
   name: string;
   analyte: string;
   concentration: SampleConcentration | null;
+  manualCoordinates?: SampleCoordinates | null;
 }
 
 export interface SamplingRecord extends Omit<SaveSampleRequest, "resultId" | "replaceExisting"> {
