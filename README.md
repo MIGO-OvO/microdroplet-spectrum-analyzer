@@ -110,7 +110,7 @@ Waveform CSV retains every selected sample in `time` (or `sample_index`), `origi
 Chart exports use a bounded rendering sample; Excel contains detected features, stable segments, length statistics and parameters.
 All calculations use full-resolution data. Excel input still requires workbook decoding in memory.
 
-Import a ROS raw spectrometer CSV to recognize sample windows and their WGS84 start positions. After analysis, save the result to the local sampling database and add geolocated samples to the map. See [Sampling library and satellite map](README.zh-CN.md#采样库与卫星地图) for Google Maps configuration and the layer controls.
+Import a ROS raw spectrometer CSV to recognize sample windows and their WGS84 start positions. After analysis, save the result to the local sampling database and add geolocated samples to the map. The desktop app uses the same keyless Google satellite tiles as USV GroundStation. [Sampling library and satellite map](README.zh-CN.md#采样库与卫星地图)
 
 ## Measured scope
 

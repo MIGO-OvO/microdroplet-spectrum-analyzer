@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import type { LayerMode, MapLayers, Position } from "../lib/sample-surface";
 
 interface Props {
-  apiKey: string;
+  desktop: boolean;
   layers: MapLayers;
   mode: LayerMode;
   focused: number | null;
@@ -11,44 +12,8 @@ interface Props {
 
 type Pixel = { x: number; y: number };
 type Project = (position: Position) => Pixel;
-let loaded: { key: string; promise: Promise<google.maps.MapsLibrary> } | null = null;
-let authDenied = false;
-const authListeners = new Set<() => void>();
 
-function loadMaps(key: string) {
-  const mapWindow = window as typeof window & { initializeSampleSatellite?: () => void; gm_authFailure?: () => void };
-  if (loaded && loaded.key !== key) return Promise.reject(new Error("请重启应用以使用新密钥。"));
-  if (authDenied) return Promise.reject(new Error("Google Maps 授权失败。请检查密钥、计费和网站来源限制。"));
-  if (loaded) return loaded.promise;
-  const promise = new Promise<google.maps.MapsLibrary>((resolve, reject) => {
-    const script = document.createElement("script");
-    const url = new URL("https://maps.googleapis.com/maps/api/js");
-    url.search = new URLSearchParams({ key, v: "weekly", loading: "async", callback: "initializeSampleSatellite" }).toString();
-    script.src = url.toString();
-    script.async = true;
-    const failed = () => {
-      window.clearTimeout(timeout);
-      script.remove();
-      loaded = null;
-      delete mapWindow.initializeSampleSatellite;
-      reject(new Error("卫星底图加载失败，请检查网络后重试。"));
-    };
-    const timeout = window.setTimeout(failed, 20_000);
-    script.addEventListener("error", failed, { once: true });
-    mapWindow.gm_authFailure = () => {
-      authDenied = true;
-      authListeners.forEach(listener => listener());
-    };
-    mapWindow.initializeSampleSatellite = () => {
-      window.clearTimeout(timeout);
-      delete mapWindow.initializeSampleSatellite;
-      void (google.maps.importLibrary("maps") as Promise<google.maps.MapsLibrary>).then(resolve, reject);
-    };
-    document.head.append(script);
-  });
-  loaded = { key, promise };
-  return promise;
-}
+const projectOn = (map: MapLibreMap): Project => ({ lng, lat }) => map.project([lng, lat]);
 
 function draw(canvas: HTMLCanvasElement, width: number, height: number, project: Project, { layers, mode, focused }: Props) {
   const scale = window.devicePixelRatio || 1;
@@ -124,122 +89,85 @@ function pickPoint(pixel: Pixel, project: Project, props: Props) {
   if (closest !== null) props.onFocus(closest);
 }
 
-function fitPoints(map: google.maps.Map, points: MapLayers["points"]) {
+function fitPoints(map: MapLibreMap, points: MapLayers["points"]) {
   if (!points.length) return;
-  if (points.every(point => point.position.lat === points[0].position.lat && point.position.lng === points[0].position.lng)) {
-    map.setCenter(points[0].position);
-    map.setZoom(17);
+  const latitudes = points.map(point => point.position.lat), longitudes = points.map(point => point.position.lng);
+  const [west, south, east, north] = [Math.min(...longitudes), Math.min(...latitudes), Math.max(...longitudes), Math.max(...latitudes)];
+  if (west === east && south === north) {
+    map.jumpTo({ center: [west, south], zoom: 17 });
     return;
   }
-  const bounds = new google.maps.LatLngBounds();
-  points.forEach(point => bounds.extend(point.position));
-  map.fitBounds(bounds, 44);
+  map.fitBounds([west, south, east, north], { padding: 44, maxZoom: 17, duration: 0 });
 }
 
 export function SampleMap(props: Props) {
-  const { apiKey, layers, mode } = props;
+  const { desktop, layers, mode } = props;
   const frame = useRef(props);
   const mapHost = useRef<HTMLDivElement>(null);
-  const preview = useRef<HTMLCanvasElement>(null);
-  const map = useRef<google.maps.Map | null>(null);
-  const overlay = useRef<google.maps.OverlayView | null>(null);
-  const [satellite, setSatellite] = useState(false);
-  const [status, setStatus] = useState("");
+  const overlay = useRef<HTMLCanvasElement>(null);
+  const map = useRef<MapLibreMap | null>(null);
+  const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState(desktop ? "正在加载卫星底图…" : "坐标预览");
+
+  const redraw = useCallback(() => {
+    const canvas = overlay.current;
+    if (!canvas) return;
+    const { clientWidth: width, clientHeight: height } = canvas;
+    const project = map.current ? projectOn(map.current) : previewProjection(width, height, frame.current.layers.points);
+    draw(canvas, width, height, project, frame.current);
+  }, []);
 
   useEffect(() => {
     frame.current = props;
-    overlay.current?.draw();
-    const canvas = preview.current;
-    if (!canvas || satellite) return;
-    const redraw = () => {
-      const { clientWidth: width, clientHeight: height } = canvas;
-      draw(canvas, width, height, previewProjection(width, height, frame.current.layers.points), frame.current);
-    };
     redraw();
-    const size = new ResizeObserver(redraw);
-    size.observe(canvas);
-    return () => size.disconnect();
-  }, [props, satellite]);
+  }, [props, redraw]);
 
   useEffect(() => {
-    setSatellite(false);
-    setStatus("");
     const host = mapHost.current;
-    if (!host || !apiKey) return;
+    if (!host) return;
+    const size = new ResizeObserver(() => { map.current?.resize(); redraw(); });
+    size.observe(host);
+    if (!desktop) return () => size.disconnect();
     let cancelled = false;
-    let tilesTimeout: number | undefined;
-    let listener: google.maps.MapsEventListener | undefined;
-    let tiles: google.maps.MapsEventListener | undefined;
-    const denied = () => {
-      setSatellite(false);
-      window.clearTimeout(tilesTimeout);
-      tiles?.remove();
-      setStatus("Google Maps 授权失败。请检查密钥、计费和网站来源限制。");
-    };
-    authListeners.add(denied);
-    setStatus("正在加载卫星底图…");
-    void loadMaps(apiKey).then(({ Map, OverlayView, RenderingType }) => {
-      if (cancelled || authDenied) return;
-      const viewport = new Map(host, {
-        mapTypeId: "satellite", renderingType: RenderingType.RASTER,
-        center: { lat: 0, lng: 0 }, zoom: 2, maxZoom: 21, tilt: 0,
-        mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
-      });
-      const canvas = document.createElement("canvas");
-      canvas.className = "sample-satellite-layer";
-      const layer = new class extends OverlayView {
-        private size = new ResizeObserver(() => this.draw());
-        onAdd() { this.getPanes()?.overlayLayer.append(canvas); this.size.observe(host); }
-        draw() {
-          const projection = this.getProjection();
-          const corner = projection?.fromContainerPixelToLatLng(new google.maps.Point(0, 0));
-          const origin = corner && projection.fromLatLngToDivPixel(corner);
-          if (!origin) return;
-          const { clientWidth: width, clientHeight: height } = host;
-          Object.assign(canvas.style, { left: `${origin.x}px`, top: `${origin.y}px`, width: `${width}px`, height: `${height}px` });
-          draw(canvas, width, height, position => projection.fromLatLngToContainerPixel(position)!, frame.current);
-        }
-        onRemove() { this.size.disconnect(); canvas.remove(); }
-      }();
+    void import("../lib/sample-basemap").then(({ createSampleBasemap }) => {
+      if (cancelled) return;
+      const viewport = createSampleBasemap(host);
       map.current = viewport;
-      overlay.current = layer;
-      layer.setMap(viewport);
-      listener = viewport.addListener("click", (event: google.maps.MapMouseEvent) => {
-        const projection = layer.getProjection();
-        const pixel = event.latLng && projection?.fromLatLngToContainerPixel(event.latLng);
-        if (pixel) pickPoint(pixel, position => projection.fromLatLngToContainerPixel(position)!, frame.current);
+      let hasImagery = false;
+      viewport.on("sourcedata", event => {
+        if (event.sourceId === "satellite" && event.tile?.state === "loaded" && !hasImagery) {
+          hasImagery = true;
+          setStatus("");
+        }
       });
-      tiles = viewport.addListener("tilesloaded", () => {
-        if (authDenied) return;
-        window.clearTimeout(tilesTimeout);
-        setSatellite(true);
-        setStatus("");
+      viewport.on("error", () => {
+        if (!hasImagery) setStatus("卫星底图暂不可用");
       });
-      tilesTimeout = window.setTimeout(() => setStatus("卫星影像加载超时，当前显示坐标预览。"), 20_000);
+      viewport.on("render", redraw);
+      viewport.on("click", event => {
+        pickPoint(event.point, projectOn(viewport), frame.current);
+      });
       fitPoints(viewport, frame.current.layers.points);
-    }).catch((error: unknown) => { if (!cancelled) setStatus(error instanceof Error ? error.message : "卫星底图加载失败。"); });
+      setReady(true);
+      redraw();
+    }).catch(() => { if (!cancelled) setStatus("卫星底图初始化失败，显示坐标预览。"); });
     return () => {
       cancelled = true;
-      window.clearTimeout(tilesTimeout);
-      authListeners.delete(denied);
-      listener?.remove();
-      tiles?.remove();
-      overlay.current?.setMap(null);
-      overlay.current = null;
+      size.disconnect();
+      map.current?.remove();
       map.current = null;
-      host.replaceChildren();
     };
-  }, [apiKey]);
+  }, [desktop, redraw]);
 
   useEffect(() => { if (map.current) fitPoints(map.current, layers.points); }, [layers.points]);
 
   return <div className="sampling-map-display" data-layer={mode}>
-    <div ref={mapHost} className="sample-satellite" aria-label="Google 卫星地图" aria-hidden={!satellite} />
-    {!satellite && <canvas ref={preview} className="sample-preview" aria-label="采样点坐标预览" onClick={event => {
+    <div ref={mapHost} className="sample-satellite" role="region" aria-label="Google 卫星地图" aria-hidden={!ready} />
+    <canvas ref={overlay} className="sample-map-overlay" data-on-map={ready} aria-label="采样点图层" onClick={event => {
       const { left, top, width, height } = event.currentTarget.getBoundingClientRect();
       pickPoint({ x: event.clientX - left, y: event.clientY - top }, previewProjection(width, height, layers.points), props);
-    }} />}
-    <span className="sample-map-status" role="status">{satellite ? "Google 卫星地图" : status || "坐标预览"}</span>
+    }} />
+    {status && <span className="sample-map-status" role="status">{status}</span>}
     {!layers.points.length && <div className="sample-map-empty">从采样库添加带坐标的记录</div>}
     {layers.points.length > 0 && mode !== "points" && layers.message && <div className="sample-map-empty">{layers.message}</div>}
     {mode !== "points" && !layers.message && mode === "contours" && !layers.contours.length &&

@@ -23,7 +23,7 @@
 .sample-source-strip .button { flex: 0 0 auto; white-space: nowrap; }
 .import-sample { grid-column: 1 / -1; display: grid; gap: 5px; }
 .sample-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border: 0; padding: 16px 0 0; margin: 0; }
-.sample-fields input, .sampling-search input, .sample-key-fields input {
+.sample-fields input, .sampling-search input {
   width: 100%;
   min-height: 36px;
   min-width: 0;
@@ -100,41 +100,18 @@
 .sampling-layers { flex: 1; }
 .sampling-layers > svg { margin-right: 4px; color: var(--ink-secondary); }
 .sampling-layers button[aria-pressed="true"] { border-color: var(--line); color: var(--blue-strong); background: var(--surface-active); }
-.sample-map-settings { position: relative; }
-.sample-map-settings summary { list-style: none; }
-.sample-map-settings summary::-webkit-details-marker { display: none; }
-.sample-key-fields {
-  position: absolute;
-  z-index: 3;
-  right: 0;
-  top: calc(100% + 8px);
-  width: min(320px, 80vw);
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: var(--surface-panel);
-  box-shadow: 0 6px 16px #26374121;
-}
-.sample-key-fields p { margin: 0; line-height: 1.5; }
-.sample-key-fields code { overflow-wrap: anywhere; color: var(--blue-strong); }
-.sample-key-fields .button { justify-self: end; }
 .sampling-map-display {
   position: relative;
   flex: 1;
   min-height: 275px;
   isolation: isolate;
   overflow: hidden;
-  background: #edf3f5;
-}
-.sample-satellite, .sample-preview { position: absolute; inset: 0; width: 100%; height: 100%; }
-.sample-preview {
   background-color: #edf3f5;
   background-image: linear-gradient(#d6e2e8 1px, transparent 1px), linear-gradient(90deg, #d6e2e8 1px, transparent 1px);
   background-size: 28px 28px;
 }
-.sample-satellite-layer { position: absolute; pointer-events: none; }
+.sample-satellite, .sample-map-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sample-map-overlay[data-on-map="true"] { pointer-events: none; }
 .sample-map-status, .sample-map-empty {
   position: absolute;
   z-index: 1;

@@ -6,14 +6,21 @@ mod data;
 mod export;
 mod models;
 mod sample_store;
+mod satellite;
 
 use commands::AppState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
+        .setup(|app| {
+            let cache = app.path().app_cache_dir()?.join("map-cache");
+            app.manage(satellite::SatelliteTiles::new(cache)?);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::inspect_data_file,
             commands::load_data_file,
@@ -25,6 +32,7 @@ pub fn run() {
             commands::export_chart,
             commands::save_sample,
             sample_store::list_samples,
+            satellite::satellite_tile,
             calibration_io::read_calibration_artifact,
             calibration_io::write_calibration_artifact,
         ])

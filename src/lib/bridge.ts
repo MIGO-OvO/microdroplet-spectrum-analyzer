@@ -46,6 +46,10 @@ export function listSamplingRecords(): Promise<SamplingRecord[]> {
   return invoke("list_samples");
 }
 
+export function readSatelliteTile(z: number, x: number, y: number): Promise<ArrayBuffer> {
+  return invoke("satellite_tile", { z, x, y });
+}
+
 export function runAnalysis(request: AnalysisRequest): Promise<AnalysisResponse> {
   return invoke<AnalysisResponse>("analyze_signal", { request });
 }

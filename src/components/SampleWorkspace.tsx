@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Crosshair, Layers3, MapPin } from "lucide-react";
+import { Layers3, MapPin } from "lucide-react";
 import { listSamplingRecords } from "../lib/bridge";
 import { errorMessage } from "../lib/format";
 import { buildMapLayers, concentrationGradient, type LayerMode } from "../lib/sample-surface";
@@ -7,7 +7,6 @@ import { positionLabel, samplePosition } from "../lib/sampling";
 import type { SamplingRecord } from "../types";
 import { SampleMap } from "./SampleMap";
 
-const MAP_KEY = "samples.googleMapsKey";
 const MODES = { points: "实测点", heat: "热力图", contours: "等浓度线" } as const;
 const measurement = (value: number) => Number(value.toPrecision(6)).toString();
 
@@ -29,11 +28,6 @@ export function SampleWorkspace({ desktop, busy, selected, onSelect, onReload }:
   const [search, setSearch] = useState("");
   const [layer, setLayer] = useState<LayerMode>("points");
   const [loadError, setLoadError] = useState("");
-  const [keyError, setKeyError] = useState("");
-  const [apiKey, setApiKey] = useState(() => {
-    try { return localStorage.getItem(MAP_KEY) ?? ""; } catch { return ""; }
-  });
-  const [keyDraft, setKeyDraft] = useState(apiKey);
 
   useEffect(() => {
     if (!desktop) return;
@@ -53,16 +47,6 @@ export function SampleWorkspace({ desktop, busy, selected, onSelect, onReload }:
     const exists = selected.includes(record.id);
     onSelect(exists ? selected.filter(id => id !== record.id) : [...selected, record.id]);
     setFocused(exists ? null : record.id);
-  };
-
-  const saveKey = () => {
-    const next = keyDraft.trim();
-    setApiKey(next);
-    setKeyError("");
-    try {
-      if (next) localStorage.setItem(MAP_KEY, next);
-      else localStorage.removeItem(MAP_KEY);
-    } catch { setKeyError("本次会话可使用该设置。重启后请重新填写密钥。"); }
   };
 
   return <section className="sampling-workspace" aria-label="采样地图">
@@ -115,20 +99,8 @@ export function SampleWorkspace({ desktop, busy, selected, onSelect, onReload }:
             key={mode} aria-pressed={layer === mode} onClick={() => setLayer(mode)}>{MODES[mode]}</button>)}
         </div>
         <span className="sampling-count"><MapPin size={15} aria-hidden="true" />{layers.points.length} 个点</span>
-        <details className="sample-map-settings">
-          <summary className="button secondary compact-button"><Crosshair size={15} aria-hidden="true" />配置卫星底图</summary>
-          <form className="sample-key-fields" onSubmit={event => { event.preventDefault(); saveKey(); }}>
-            <label className="field-stack"><span>Google Maps API Key</span>
-              <input type="password" value={keyDraft} onChange={event => setKeyDraft(event.target.value)} autoComplete="off" spellCheck={false} />
-            </label>
-            <p>启用 Maps JavaScript API 和计费，并在密钥的网站限制中添加此来源。</p>
-            <code>{window.location.origin}/*</code>
-            {keyError && <p className="field-error" role="alert">{keyError}</p>}
-            <button className="button primary compact-button" type="submit">应用</button>
-          </form>
-        </details>
       </div>
-      <SampleMap apiKey={apiKey} mode={layer} layers={layers} focused={focused} onFocus={setFocused} />
+      <SampleMap desktop={desktop} mode={layer} layers={layers} focused={focused} onFocus={setFocused} />
       {layers.range && <div className="sampling-legend" aria-label="浓度色标">
         <span>浓度 <strong>{layers.range.unit}</strong></span>
         <span>{measurement(layers.range.min)}</span>
