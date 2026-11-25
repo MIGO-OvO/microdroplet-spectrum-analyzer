@@ -86,6 +86,9 @@ export interface FileInspection {
   fileName: string;
   rowCount: number;
   columns: ColumnInfo[];
+  samples?: SampleMetadata[];
+  suggestedSignalColumn?: number | null;
+  suggestedTimeColumn?: number | null;
 }
 
 export interface DatasetSummary {
@@ -94,6 +97,54 @@ export interface DatasetSummary {
   droppedRows: number;
   hasRealTime: boolean;
   columns: ColumnInfo[];
+  sample?: SampleMetadata | null;
+}
+
+export interface SampleMetadata {
+  key: string;
+  sampleId: string | null;
+  missionId: string | null;
+  sampleName: string | null;
+  startedAt: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  positionSource: string | null;
+  simulated: boolean;
+  outcome: string | null;
+  invalidPosition: boolean;
+  rowCount: number;
+}
+
+interface SampleConcentration {
+  value: number;
+  unit: string;
+  curve: { id: string; name: string; updatedAt: string; slope: number; intercept: number } | null;
+  notices: string[];
+}
+
+export interface SaveSampleRequest {
+  resultId: number;
+  replaceExisting: boolean;
+  name: string;
+  analyte: string;
+  concentration: SampleConcentration | null;
+}
+
+export interface SamplingRecord extends Omit<SaveSampleRequest, "resultId" | "replaceExisting"> {
+  id: number;
+  savedAt: string;
+  source: {
+    path: string;
+    fileName: string;
+    signalColumn: number;
+    timeColumn: number | null;
+    metadata: SampleMetadata | null;
+  };
+  response: number | null;
+  detectionCount: number;
+  pointCount: number;
+  parameters: AnalysisRequest;
+  warnings: string[];
 }
 
 export interface PlateauFeature {

@@ -1,9 +1,11 @@
 mod analyzer;
 mod calibration_io;
 mod commands;
+mod csv_samples;
 mod data;
 mod export;
 mod models;
+mod sample_store;
 
 use commands::AppState;
 
@@ -21,6 +23,8 @@ pub fn run() {
             commands::export_results,
             commands::export_waveform,
             commands::export_chart,
+            commands::save_sample,
+            sample_store::list_samples,
             calibration_io::read_calibration_artifact,
             calibration_io::write_calibration_artifact,
         ])

@@ -177,6 +177,9 @@ pub struct FileInspection {
     pub file_name: String,
     pub row_count: usize,
     pub columns: Vec<ColumnInfo>,
+    pub samples: Vec<crate::csv_samples::SampleMetadata>,
+    pub suggested_signal_column: Option<usize>,
+    pub suggested_time_column: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,6 +188,7 @@ pub struct LoadDataRequest {
     pub path: String,
     pub data_column_index: usize,
     pub time_column_index: Option<usize>,
+    pub sample_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -195,6 +199,7 @@ pub struct DatasetSummary {
     pub dropped_rows: usize,
     pub has_real_time: bool,
     pub columns: Vec<ColumnInfo>,
+    pub sample: Option<crate::csv_samples::SampleMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::analyzer;
 use crate::data;
@@ -10,12 +10,14 @@ use crate::models::{
     FileInspection, FullAnalysisResult, InspectFileRequest, LoadDataRequest, ParameterSuggestion,
     PreprocessCache, SuggestionRequest,
 };
+use crate::sample_store::{self, SampleDetails, SampleSource, SamplingRecord, SaveSampleRequest};
 
 #[derive(Default)]
 struct SessionState {
     next_revision: u64,
     analysis_generation: u64,
     dataset: Option<Dataset>,
+    sample_source: Option<SampleSource>,
     preprocess_cache: Option<PreprocessCache>,
     last_result: Option<FullAnalysisResult>,
 }
@@ -49,18 +51,58 @@ pub async fn load_data_file(
         session.next_revision = session.next_revision.wrapping_add(1).max(1);
         session.next_revision
     };
-    let dataset = tauri::async_runtime::spawn_blocking(move || data::load(&request, revision))
-        .await
-        .map_err(join_error)??;
-    let summary = data::summary(&dataset);
+    let (dataset, source) = tauri::async_runtime::spawn_blocking(move || {
+        let (dataset, metadata) = data::load(&request, revision)?;
+        let source = SampleSource {
+            path: request.path,
+            file_name: dataset.file_name.clone(),
+            signal_column: request.data_column_index,
+            time_column: request.time_column_index,
+            metadata,
+        };
+        Ok::<_, String>((dataset, source))
+    })
+    .await
+    .map_err(join_error)??;
+    let summary = data::summary(&dataset, source.metadata.clone());
     let mut session = state
         .session
         .lock()
         .map_err(|_| "数据会话已损坏，请重新启动应用。".to_owned())?;
+    if session.next_revision != revision {
+        return Err("已选择其他数据，请重新载入。".into());
+    }
     session.dataset = Some(dataset);
+    session.sample_source = Some(source);
     session.preprocess_cache = None;
     session.last_result = None;
     Ok(summary)
+}
+
+#[tauri::command]
+pub async fn save_sample(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: SaveSampleRequest,
+) -> Result<Option<SamplingRecord>, String> {
+    let replace = request.replace_existing;
+    let details = {
+        let session = state
+            .session
+            .lock()
+            .map_err(|_| "数据会话不可用。".to_owned())?;
+        let result = session
+            .last_result
+            .as_ref()
+            .filter(|result| {
+                result.result_id == request.result_id
+                    && result.result_id == session.analysis_generation
+            })
+            .ok_or("分析结果已更新，请使用当前结果保存采样。")?;
+        let source = session.sample_source.clone().ok_or("当前没有采样文件。")?;
+        SampleDetails::from_analysis(request, source, result)?
+    };
+    sample_store::save(app, details, replace).await
 }
 
 #[tauri::command]

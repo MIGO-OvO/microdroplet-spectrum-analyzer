@@ -2,17 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, FileSpreadsheet, X } from "lucide-react";
 
 import type { FileInspection } from "../types";
+import { positionLabel } from "../lib/sampling";
+import type { HistoryOrigin } from "../lib/history";
 
 interface ColumnDialogProps {
   inspection: FileInspection;
   busy: boolean;
+  initial?: HistoryOrigin | null;
   onCancel: () => void;
-  onConfirm: (signalColumn: number, timeColumn: number | null) => void;
+  onConfirm: (signalColumn: number, timeColumn: number | null, sampleKey: string | null) => void;
 }
 
-export function ColumnDialog({ inspection, busy, onCancel, onConfirm }: ColumnDialogProps) {
-  const [signalColumn, setSignalColumn] = useState(inspection.columns[0]?.index ?? 0);
-  const [timeColumn, setTimeColumn] = useState<number | "">("");
+export function ColumnDialog({ inspection, initial, busy, onCancel, onConfirm }: ColumnDialogProps) {
+  const samples = inspection.samples ?? [];
+  const [sampleKey, setSampleKey] = useState(initial?.sampleKey ?? samples[0]?.key ?? "");
+  const selectedSample = samples.find(sample => sample.key === sampleKey);
+  const [signalColumn, setSignalColumn] = useState(initial?.signalColumn ?? inspection.suggestedSignalColumn ?? inspection.columns[0]?.index ?? 0);
+  const [timeColumn, setTimeColumn] = useState<number | "">(initial ? initial.timeColumn ?? "" : inspection.suggestedTimeColumn ?? "");
   const signalSelect = useRef<HTMLSelectElement>(null);
 
   useEffect(() => {
@@ -56,6 +62,17 @@ export function ColumnDialog({ inspection, busy, onCancel, onConfirm }: ColumnDi
         </div>
 
         <div className="dialog-fields">
+          {samples.length > 0 && <div className="import-sample">
+            <label className="field-stack">
+              <span>采样窗口</span>
+              <select value={sampleKey} onChange={event => setSampleKey(event.target.value)} disabled={busy}>
+                {samples.map((sample, index) => <option key={sample.key} value={sample.key}>
+                  {sample.sampleName ?? sample.sampleId ?? `采样 ${index + 1}`} · {sample.rowCount.toLocaleString()} 帧
+                </option>)}
+              </select>
+            </label>
+            <small>{positionLabel(selectedSample)}{selectedSample?.startedAt ? ` · ${selectedSample.startedAt}` : ""}</small>
+          </div>}
           <label className="field-stack">
             <span>信号列</span>
             <select
@@ -102,7 +119,7 @@ export function ColumnDialog({ inspection, busy, onCancel, onConfirm }: ColumnDi
           <button
             className="button primary"
             type="button"
-            onClick={() => onConfirm(signalColumn, selectedTime)}
+            onClick={() => onConfirm(signalColumn, selectedTime, sampleKey || null)}
             disabled={busy || columnsConflict}
           >
             {busy ? "正在读取…" : "载入并分析"}

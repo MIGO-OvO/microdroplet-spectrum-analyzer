@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import "./sampling.css";
 import {
   AlertCircle,
   Database,
   FolderOpen,
+  MapPin,
   Play,
   X,
 } from "lucide-react";
@@ -16,6 +18,8 @@ import { ParameterPanel } from "./components/ParameterPanel";
 import { ResultsTable } from "./components/ResultsTable";
 import { SignalChart } from "./components/SignalChart";
 import { SummaryPanel } from "./components/SummaryPanel";
+import { SaveSampleDialog } from "./components/SaveSampleDialog";
+import { SampleWorkspace } from "./components/SampleWorkspace";
 import {
   chooseChartPath,
   chooseDataFile,
@@ -42,6 +46,7 @@ import {
   type HistoryOrigin,
 } from "./lib/history";
 import { SAMPLE_DROPLET_RESULT, SAMPLE_SUMMARY } from "./lib/sample";
+import { positionLabel } from "./lib/sampling";
 import {
   DEFAULT_REQUEST,
   currentAnalysisRequest,
@@ -49,6 +54,7 @@ import {
   type AnalysisResponse,
   type DatasetSummary,
   type FileInspection,
+  type SamplingRecord,
 } from "./types";
 
 const LARGE_DATA_THRESHOLD = 1_000_000;
@@ -57,6 +63,7 @@ const ANALYSIS_DEBOUNCE_MS = 350;
 interface PendingFile {
   path: string;
   inspection: FileInspection;
+  initial?: HistoryOrigin | null;
 }
 
 function cloneDefaultRequest(): AnalysisRequest {
@@ -79,7 +86,7 @@ function completionStatus(result: AnalysisResponse): string {
 export default function App() {
   const [selection, setSelection] = useState<{ result: AnalysisResponse; number: number; revision: number } | null>(null);
   const desktopRuntime = isTauriRuntime();
-  const [panel, setPanel] = useState<"analysis" | "calibration" | "history">("analysis");
+  const [panel, setPanel] = useState<"analysis" | "calibration" | "history" | "samples">("analysis");
   const [request, setRequest] = useState<AnalysisRequest>(cloneDefaultRequest);
   const [summary, setSummary] = useState<DatasetSummary | null>(
     desktopRuntime ? null : SAMPLE_SUMMARY,
@@ -89,6 +96,9 @@ export default function App() {
   );
   const [datasetKey, setDatasetKey] = useState(0);
   const [pendingFile, setPendingFile] = useState<PendingFile | null>(null);
+  const [loadedFile, setLoadedFile] = useState<PendingFile | null>(null);
+  const [saveSampleOpen, setSaveSampleOpen] = useState(false);
+  const [mapSamples, setMapSamples] = useState<number[]>([]);
   const [fileBusy, setFileBusy] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [exporting, setExporting] = useState<"data" | "chart" | "waveform" | null>(null);
@@ -209,6 +219,7 @@ export default function App() {
       setResult(null);
       setDatasetKey((key) => key + 1);
       setPendingFile(null);
+      setSaveSampleOpen(false);
       setLoadedOrigin(origin);
       const shouldAutoRefresh = loaded.pointCount <= LARGE_DATA_THRESHOLD;
       setAutoRefresh(shouldAutoRefresh);
@@ -256,7 +267,8 @@ export default function App() {
       setStatus("正在读取文件结构…");
       const inspection = await inspectDataFile(path);
       setPendingFile({ path, inspection });
-      setStatus("请选择信号列和可选时间列。");
+      setPanel("analysis");
+      setStatus(inspection.samples?.length ? `已识别 ${inspection.samples.length} 个采样窗口。` : "请选择信号列和可选时间列。");
     } catch (loadError) {
       const message = errorMessage(loadError);
       setError(message);
@@ -266,14 +278,15 @@ export default function App() {
     }
   }, [desktopRuntime]);
 
-  const handleColumnConfirm = async (signalColumn: number, timeColumn: number | null) => {
-    if (!pendingFile) return;
+  const handleColumnConfirm = async (signalColumn: number, timeColumn: number | null, sampleKey: string | null) => {
+    if (!pendingFile || running.current) return;
     setFileBusy(true);
     setError(null);
     try {
-      const loaded = await loadDataFile(pendingFile.path, signalColumn, timeColumn);
+      const loaded = await loadDataFile(pendingFile.path, signalColumn, timeColumn, sampleKey);
       const nextRequest = { ...requestRef.current, xRange: null };
-      await applyDataset(loaded, nextRequest, { path: pendingFile.path, signalColumn, timeColumn });
+      setLoadedFile({ path: pendingFile.path, inspection: pendingFile.inspection });
+      await applyDataset(loaded, nextRequest, { path: pendingFile.path, signalColumn, timeColumn, sampleKey });
     } catch (loadError) {
       const message = errorMessage(loadError);
       setError(message);
@@ -387,11 +400,7 @@ export default function App() {
     catch (storageError) { setError(`工作曲线选择无法记忆：${errorMessage(storageError)}`); }
   };
 
-  const handleReloadHistory = async (entry: HistoryEntry) => {
-    if (!entry.filePath || entry.signalColumn == null) {
-      setError("该记录没有保存文件路径或列信息，无法重新载入；请用“加载数据”手动选择文件。");
-      return;
-    }
+  const reloadSource = async (origin: HistoryOrigin, fileName: string, parameters: AnalysisRequest | null) => {
     if (running.current) {
       setStatus("请等待当前分析完成后再重新载入。");
       return;
@@ -399,14 +408,13 @@ export default function App() {
     setFileBusy(true);
     setError(null);
     try {
-      setStatus(`正在重新载入 ${entry.fileName}…`);
-      const loaded = await loadDataFile(entry.filePath, entry.signalColumn, entry.timeColumn);
-      const nextRequest = entry.parameters
-        ? currentAnalysisRequest(entry.parameters)
+      setStatus(`正在重新载入 ${fileName}…`);
+      const loaded = await loadDataFile(origin.path, origin.signalColumn, origin.timeColumn, origin.sampleKey);
+      const nextRequest = parameters
+        ? currentAnalysisRequest(parameters)
         : { ...requestRef.current, xRange: null };
-      await applyDataset(loaded, nextRequest, {
-        path: entry.filePath, signalColumn: entry.signalColumn, timeColumn: entry.timeColumn,
-      });
+      setLoadedFile(null);
+      await applyDataset(loaded, nextRequest, origin);
       setPanel("analysis");
     } catch (reloadError) {
       setError(errorMessage(reloadError));
@@ -414,6 +422,21 @@ export default function App() {
     } finally {
       setFileBusy(false);
     }
+  };
+
+  const handleReloadHistory = async (entry: HistoryEntry) => {
+    if (!entry.filePath || entry.signalColumn == null) {
+      setError("该记录缺少文件路径或列信息。请用“加载数据”选择文件。");
+      return;
+    }
+    await reloadSource({ path: entry.filePath, signalColumn: entry.signalColumn,
+      timeColumn: entry.timeColumn, sampleKey: entry.sampleKey }, entry.fileName, entry.parameters);
+  };
+
+  const handleReloadSample = async (record: SamplingRecord) => {
+    const { source, parameters } = record;
+    await reloadSource({ path: source.path, signalColumn: source.signalColumn,
+      timeColumn: source.timeColumn, sampleKey: source.metadata?.key }, source.fileName, parameters);
   };
 
   const handleReuseHistoryParameters = (entry: HistoryEntry) => {
@@ -482,9 +505,10 @@ export default function App() {
         <button type="button" aria-current={panel === "analysis" ? "page" : undefined} onClick={() => setPanel("analysis")}>数据处理</button>
         <button type="button" aria-current={panel === "calibration" ? "page" : undefined} onClick={() => setPanel("calibration")}>工作曲线</button>
         <button type="button" aria-current={panel === "history" ? "page" : undefined} onClick={() => setPanel("history")}>历史记录</button>
+        <button type="button" aria-current={panel === "samples" ? "page" : undefined} onClick={() => setPanel("samples")}>采样地图</button>
       </nav>
       <div className="functional-content">
-      <CalibrationPanel active={panel === "calibration"} desktop={desktopRuntime} hidden={panel === "history"}
+      <CalibrationPanel active={panel === "calibration"} desktop={desktopRuntime} hidden={panel === "history" || panel === "samples"}
         result={dirty || analyzing || fileBusy ? null : result} summary={summary} request={request}
         onOpen={() => setPanel("calibration")} onLibraryChange={setCalibrationLibrary} />
       <HistoryPanel
@@ -504,6 +528,19 @@ export default function App() {
         onResetStorage={handleResetHistoryStorage}
         onExport={() => void handleExportHistory()}
       />
+      {panel === "samples" && <SampleWorkspace desktop={desktopRuntime} selected={mapSamples} onSelect={setMapSamples}
+        onReload={record => void handleReloadSample(record)} busy={fileBusy || analyzing} />}
+      {panel === "analysis" && desktopRuntime && summary && <div className="sample-source-strip">
+        <MapPin size={16} aria-hidden="true" />
+        <div className="sample-source-info">
+          <strong>{summary.sample?.sampleName ?? summary.sample?.sampleId ?? "采样位置"}</strong>
+          <span>{positionLabel(summary.sample)}{summary.sample?.startedAt ? ` · ${summary.sample.startedAt}` : ""}</span>
+        </div>
+        {loadedFile && (loadedFile.inspection.samples?.length ?? 0) > 1 && <button className="button secondary" type="button"
+          disabled={fileBusy || analyzing} onClick={() => setPendingFile({ ...loadedFile, initial: loadedOrigin })}>切换样本</button>}
+        <button className="button secondary" type="button" onClick={() => setSaveSampleOpen(true)}
+          disabled={!result || dirty || analyzing || fileBusy}>保存采样数据</button>
+      </div>}
       <main className="app-main" hidden={panel !== "analysis"}>
         <div className="workspace-grid">
           <ParameterPanel
@@ -558,11 +595,17 @@ export default function App() {
       {pendingFile && (
         <ColumnDialog
           inspection={pendingFile.inspection}
+          initial={pendingFile.initial}
           busy={fileBusy}
           onCancel={() => setPendingFile(null)}
-          onConfirm={(signalColumn, timeColumn) => void handleColumnConfirm(signalColumn, timeColumn)}
+          onConfirm={(signalColumn, timeColumn, sampleKey) => void handleColumnConfirm(signalColumn, timeColumn, sampleKey)}
         />
       )}
+      {saveSampleOpen && summary && result && <SaveSampleDialog summary={summary} result={result} curves={calibrationLibrary.curves}
+        onClose={() => setSaveSampleOpen(false)} onSaved={record => {
+          setSaveSampleOpen(false);
+          setStatus(`已保存「${record.name}」到采样库。`);
+        }} />}
     </div>
   );
 }

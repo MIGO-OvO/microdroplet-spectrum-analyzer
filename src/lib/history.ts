@@ -25,6 +25,7 @@ export interface HistoryOrigin {
   path: string;
   signalColumn: number;
   timeColumn: number | null;
+  sampleKey?: string | null;
 }
 
 /**
@@ -41,6 +42,7 @@ export interface HistoryEntry {
   filePath: string | null;
   signalColumn: number | null;
   timeColumn: number | null;
+  sampleKey?: string;
   mode: AnalysisMode;
   /** Operator-supplied data origin, e.g. batch or sample identifier. */
   source: string;
@@ -95,6 +97,7 @@ export function createHistoryEntry(input: {
     filePath: origin?.path ?? null,
     signalColumn: origin?.signalColumn ?? null,
     timeColumn: origin?.timeColumn ?? null,
+    ...(origin?.sampleKey ? { sampleKey: origin.sampleKey } : {}),
     mode: result.mode,
     source: summary.fileName,
     note: "",
@@ -129,6 +132,7 @@ export function normalizeEntry(value: unknown): HistoryEntry | null {
     filePath: typeof raw.filePath === "string" ? raw.filePath : null,
     signalColumn: integerOrNull(raw.signalColumn),
     timeColumn: integerOrNull(raw.timeColumn),
+    ...(typeof raw.sampleKey === "string" && raw.sampleKey ? { sampleKey: raw.sampleKey } : {}),
     mode,
     source: typeof raw.source === "string" ? raw.source : "",
     note: typeof raw.note === "string" ? raw.note : "",

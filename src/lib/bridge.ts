@@ -7,6 +7,8 @@ import type {
   DatasetSummary,
   FileInspection,
   PlotSeries,
+  SamplingRecord,
+  SaveSampleRequest,
 } from "../types";
 
 export const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
@@ -29,10 +31,19 @@ export function loadDataFile(
   path: string,
   dataColumnIndex: number,
   timeColumnIndex: number | null,
+  sampleKey: string | null = null,
 ): Promise<DatasetSummary> {
   return invoke<DatasetSummary>("load_data_file", {
-    request: { path, dataColumnIndex, timeColumnIndex },
+    request: { path, dataColumnIndex, timeColumnIndex, sampleKey },
   });
+}
+
+export function saveSamplingRecord(request: SaveSampleRequest): Promise<SamplingRecord | null> {
+  return invoke("save_sample", { request });
+}
+
+export function listSamplingRecords(): Promise<SamplingRecord[]> {
+  return invoke("list_samples");
 }
 
 export function runAnalysis(request: AnalysisRequest): Promise<AnalysisResponse> {
