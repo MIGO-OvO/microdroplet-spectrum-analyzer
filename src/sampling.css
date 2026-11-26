@@ -22,7 +22,12 @@
 .sample-source-info span, .import-sample small { color: var(--ink-secondary); font-variant-numeric: tabular-nums; }
 .sample-source-strip .button { flex: 0 0 auto; white-space: nowrap; }
 .import-sample { grid-column: 1 / -1; display: grid; gap: 5px; }
-.sample-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border: 0; padding: 16px 0 0; margin: 0; }
+.sample-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .sample-coordinate-fields {
   grid-column: 1 / -1;
   display: grid;
@@ -35,10 +40,8 @@
   border-radius: 5px;
 }
 .sample-coordinate-fields legend { padding: 0 4px; font-size: var(--text-small); font-weight: 600; }
-.sample-coordinate-fields .field-stack > span { font-size: var(--text-small); }
 .sample-coordinate-fields :is(.field-error, .button) { grid-column: 1 / -1; margin: 0; }
 .sample-coordinate-fields .button { justify-self: start; }
-.sample-coordinate-dialog .sample-coordinate-fields { margin: 14px 16px; }
 .sample-fields input, .sampling-search input, .sample-coordinate-fields input {
   width: 100%;
   min-height: 36px;
@@ -49,8 +52,17 @@
   color: var(--ink);
   padding: 5px 8px;
 }
-.sample-reading { align-self: end; font-size: var(--text-title); font-variant-numeric: tabular-nums; color: var(--blue-strong); }
-.sample-notice { margin: 8px 0; color: var(--amber-ink, #7b4e12); font-size: var(--text-small); line-height: 1.45; }
+.sample-reading {
+  display: grid;
+  min-height: 38px;
+  align-self: end;
+  align-content: center;
+  overflow-wrap: anywhere;
+  color: var(--blue-strong);
+  font-size: var(--text-title);
+  font-variant-numeric: tabular-nums;
+}
+.sample-notice { margin: 0; color: var(--amber-ink, #7b4e12); font-size: var(--text-small); line-height: 1.45; }
 
 .sampling-workspace {
   display: grid;
@@ -148,5 +160,4 @@
 @media (max-width: 760px) {
   .sampling-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(185px, 35vh) minmax(365px, 1fr); }
   .sample-source-strip { flex-wrap: wrap; }
-  .sample-fields { grid-template-columns: minmax(0, 1fr); }
 }

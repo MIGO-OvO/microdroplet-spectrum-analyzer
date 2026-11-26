@@ -66,7 +66,7 @@ export function ColumnDialog({ inspection, initial, coordinatesByWindow, busy, o
           </button>
         </div>
 
-        <div className="dialog-fields">
+        <div className="dialog-body dialog-fields">
           {samples.length > 0 && <div className="import-sample">
             <label className="field-stack">
               <span>采样窗口</span>
@@ -111,13 +111,12 @@ export function ColumnDialog({ inspection, initial, coordinatesByWindow, busy, o
           </label>
           <SampleCoordinateFields draft={draft} error={typeof coordinates === "string" ? coordinates : null} disabled={busy}
             onChange={next => setDrafts(previous => ({ ...previous, [sampleKey]: next }))} />
+          {columnsConflict && (
+            <p className="field-error" role="alert">
+              时间列和信号列不能相同。
+            </p>
+          )}
         </div>
-
-        {columnsConflict && (
-          <p className="field-error" role="alert">
-            时间列和信号列不能相同。
-          </p>
-        )}
 
         <div className="dialog-actions">
           <button className="button secondary" type="button" onClick={onCancel} disabled={busy}>

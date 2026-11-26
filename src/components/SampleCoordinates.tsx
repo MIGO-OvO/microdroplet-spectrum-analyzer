@@ -39,7 +39,7 @@ export function SampleCoordinatesDialog({ sample, coordinates, onClose, onApply 
   const [draft, setDraft] = useState(() => coordinateDraft(coordinates));
   const parsed = readCoordinateDraft(draft);
   return <div className="dialog-backdrop" onMouseDown={onClose}>
-    <section className="column-dialog sample-coordinate-dialog" role="dialog" aria-modal="true" aria-labelledby="sample-coordinate-title"
+    <section className="column-dialog" role="dialog" aria-modal="true" aria-labelledby="sample-coordinate-title"
       onMouseDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === "Escape") onClose(); }}>
       <div className="dialog-heading">
         <span className="dialog-icon"><MapPin size={20} aria-hidden="true" /></span>
@@ -47,7 +47,9 @@ export function SampleCoordinatesDialog({ sample, coordinates, onClose, onApply 
         <button className="icon-button" type="button" aria-label="关闭坐标设置" onClick={onClose}><X size={18} /></button>
       </div>
       <form onSubmit={event => { event.preventDefault(); if (typeof parsed !== "string") onApply(parsed); }}>
-        <SampleCoordinateFields draft={draft} error={typeof parsed === "string" ? parsed : null} onChange={setDraft} autoFocus />
+        <div className="dialog-body">
+          <SampleCoordinateFields draft={draft} error={typeof parsed === "string" ? parsed : null} onChange={setDraft} autoFocus />
+        </div>
         <div className="dialog-actions">
           <button className="button secondary" type="button" onClick={onClose}>取消</button>
           <button className="button primary" type="submit" disabled={typeof parsed === "string"}>应用坐标</button>

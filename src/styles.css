@@ -1042,6 +1042,7 @@ h2 {
   z-index: 20;
   inset: 0;
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
   padding: 20px;
   background: rgba(24, 37, 45, 0.42);
@@ -1050,7 +1051,8 @@ h2 {
 
 .column-dialog {
   width: min(480px, 100%);
-  overflow: hidden;
+  max-height: 100%;
+  overflow: auto;
   border: 1px solid #9facb4;
   border-radius: 10px;
   background: #ffffff;
@@ -1096,26 +1098,37 @@ h2 {
   color: var(--blue);
 }
 
+.dialog-body,
 .dialog-fields {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+.dialog-body {
   padding: 14px 16px;
 }
 
-.dialog-fields .field-stack > span {
+.dialog-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dialog-fields > .field-error {
+  grid-column: 1 / -1;
+}
+
+.dialog-body .field-stack > span {
   color: #34454f;
   font-size: var(--text-small);
   font-weight: 600;
 }
 
-.dialog-fields select {
+.dialog-body .field-stack :is(input, select) {
   min-height: 38px;
   font-size: var(--text-small);
 }
 
 .field-error {
-  margin: -3px 16px 12px;
+  margin: 0;
   padding: 8px 10px;
   border: 1px solid #ebc0c0;
   border-radius: 5px;
@@ -1285,7 +1298,7 @@ h2 {
   }
 
   .dialog-fields {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
